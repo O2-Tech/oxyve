@@ -13,10 +13,10 @@ import {
   todayInSaoPaulo,
 } from '../../supabase/functions/validate-receipt/normalize.ts';
 import {
-  EXTRACT_TOOL,
   PRIMARY_MODEL,
+  RECEIPT_SCHEMA,
   SYSTEM_PROMPT,
-  buildChatRequest,
+  buildMessagesRequest,
 } from '../../supabase/functions/validate-receipt/prompt.ts';
 
 // 19/10/2026 01:30 UTC = 18/10/2026 22:30 em Brasília.
@@ -211,18 +211,15 @@ describe('normalizeExtraction', () => {
 });
 
 describe('prompt e schema', () => {
-  it('modelo e pedido determinístico com detail high', () => {
-    expect(PRIMARY_MODEL).toBe('gpt-4.1');
-    const body = buildChatRequest(PRIMARY_MODEL, 'data:image/jpeg;base64,x');
-    expect(body.model).toBe('gpt-4.1');
-    expect(body.temperature).toBe(0);
-    expect(body.tool_choice).toEqual({ type: 'function', function: { name: 'extract_receipt_data' } });
-    const image = (body.messages[1].content as Array<{ type: string; image_url?: { detail: string } }>)[1];
-    expect(image.image_url?.detail).toBe('high');
+  it('modelo e pedido com saída estruturada (detalhes em validate-receipt-prompt.test)', () => {
+    expect(PRIMARY_MODEL).toBe('claude-opus-5-5');
+    const body = buildMessagesRequest(PRIMARY_MODEL, 'image/jpeg', 'x');
+    expect(body.model).toBe('claude-opus-5-5');
+    expect(body.output_config.format.type).toBe('json_schema');
   });
 
   it('schema mantém os campos antigos e traz os novos', () => {
-    const props = Object.keys(EXTRACT_TOOL.function.parameters.properties);
+    const props = Object.keys(RECEIPT_SCHEMA.properties);
     expect(props).toEqual(
       expect.arrayContaining([
         'extracted_date', 'extracted_amount_cents', 'extracted_cnpj', 'extracted_supplier',
