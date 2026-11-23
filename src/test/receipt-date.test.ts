@@ -51,9 +51,9 @@ describe('receiptDateNotice', () => {
   it('nota fora da janela de 20 dias: despesa fica com hoje', () => {
     const d = ymd(subDays(new Date(), 29));
     expect(receiptDateNotice({ ...base, extracted_date: d }, today)).toBe(
-      `A nota é de ${br(d)} (fora da janela de 20 dias). A despesa fica com a data de hoje e o gestor verá o aviso.`,
+      `Essa nota é de ${br(d)}, de mais de 20 dias atrás (fora da janela de 20 dias). Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`,
     );
-    expect(receiptDateNotice({ ...base, extracted_date: ymd(addDays(new Date(), 2)) }, today)).toMatch(/fora da janela/);
+    expect(receiptDateNotice({ ...base, extracted_date: ymd(addDays(new Date(), 2)) }, today)).toMatch(/está no futuro/);
   });
 });
 

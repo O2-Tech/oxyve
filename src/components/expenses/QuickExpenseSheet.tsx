@@ -5,7 +5,9 @@
  * vinculada ao relatório do ciclo via report_items — antes ficava avulsa.
  *
  * Fluxo:
- * 1. `capture` — abre câmera (mobile via `capture="environment"`) ou file picker.
+ * 1. `capture` — "Tirar foto" (câmera no celular) ou "Escolher da galeria", que
+ *    aceita várias notas: viram uma fila, lançada uma por vez ("nota 2 de 7"),
+ *    com a próxima já sendo lida enquanto a pessoa confere a atual.
  * 2. `review` — preview + OCR via `useValidateReceipt`. User escolhe categoria e
  *    salva, ou vai pra `edit` pra refinar.
  * 3. `edit` — form (descrição, valor, data, categoria, evento).
@@ -58,7 +60,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Camera, Loader2, RotateCcw, PartyPopper } from 'lucide-react';
+import { CalendarIcon, Camera, Images, Loader2, RotateCcw, PartyPopper, SkipForward } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useCreateExpenseInReport, type CreateExpenseInReportResult } from '@/hooks/useCurrentReport';
@@ -68,7 +70,7 @@ import { attachReceipt, receiptFileProblem, receiptHash } from '@/lib/receipts';
 import { useExpensePolicy } from '@/hooks/usePolicy';
 import { useActiveExpenseTypes } from '@/hooks/useExpenseTypes';
 import { groupBySector } from '@/lib/categoryGroups';
-import { useValidateReceipt, receiptPolicyBlocks, receiptDateNotice } from '@/hooks/useValidateReceipt';
+import { useValidateReceipt, receiptPolicyBlocks, receiptDateNotice, prefetchReceiptReading } from '@/hooks/useValidateReceipt';
 import { receiptDateInWindow } from '@/lib/receiptDate';
 import { convertHeicToJpeg } from '@/lib/convertHeic';
 import { formatCurrency, parseAmountToCents, amountFieldError, endOfToday, minExpenseDate, foodCapCents, foodCapLabel, formatAmountInput } from '@/lib/constants';
@@ -78,6 +80,8 @@ import { O2Rings } from '@/components/brand/O2Rings';
 import { READ_WARN_BOX, READ_WARN_FIELD, READ_WARN_TEXT } from './readingWarning';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// Lote da galeria: acima disso a fila cansa e a cota de leituras (60/h) aperta.
+export const MAX_BATCH_FILES = 20;
 
 export type QuickExpenseStep = 'capture' | 'review' | 'edit';
 
@@ -119,15 +123,18 @@ export function QuickExpenseSheet({
 }: QuickExpenseSheetProps) {
   const isMobile = useIsMobile();
   const inputRef = useRef<HTMLInputElement>(null);
-  // Galeria: mesmo input sem `capture`, para quem não quer (ou não pode) usar a câmera.
+  // Galeria: input sem `capture` e com `multiple` — nota do WhatsApp, várias de uma vez.
   const galleryRef = useRef<HTMLInputElement>(null);
-  const autoOpenedRef = useRef(false);
 
   const [step, setStep] = useState<QuickExpenseStep>(initialStep);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isConverting, setIsConverting] = useState(false);
-  const [waitingForCamera, setWaitingForCamera] = useState(false);
+  // Lote: notas que faltam (a atual não entra), total escolhido e quantas foram lançadas.
+  const [queue, setQueue] = useState<File[]>([]);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+  const preparedRef = useRef(new WeakSet<File>());
   const [categoryId, setCategoryId] = useState<string>('');
   const [isEvent, setIsEvent] = useState(false);
   // Justificativa obrigatória quando a despesa é marcada como evento (foge do teto).
@@ -175,15 +182,20 @@ export function QuickExpenseSheet({
   // Reset state quando o sheet abre/fecha.
   useEffect(() => {
     if (!open) {
+      if (queue.length > 0) {
+        const n = queue.length;
+        toast.info(n === 1 ? '1 nota ficou sem lançar.' : `${n} notas ficaram sem lançar.`);
+      }
       setStep(initialStep);
       setFile(null);
       setPreview(null);
-      setWaitingForCamera(false);
       setCategoryId('');
       setIsEvent(false);
       setEventNote('');
       setFoodDays('1');
-      autoOpenedRef.current = false;
+      setQueue([]);
+      setBatchTotal(0);
+      setSavedCount(0);
       validation.reset();
       form.reset({ date: new Date(), description: '', amount: '' });
       foodCap.reset();
@@ -191,62 +203,54 @@ export function QuickExpenseSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Quando entra no step capture E é mobile, dispara o file picker
-  // automaticamente — abre câmera.
-  useEffect(() => {
-    if (open && step === 'capture' && isMobile && !autoOpenedRef.current) {
-      autoOpenedRef.current = true;
-      setWaitingForCamera(true);
-      // pequeno delay pra animação do drawer não engolir o click sintético.
-      const t = setTimeout(() => {
-        inputRef.current?.click();
-      }, 150);
-      return () => clearTimeout(t);
-    }
-  }, [open, step, isMobile]);
-
-  // Cancelar a câmera não dispara `change`; sem ouvir `cancel` a folha ficava presa
-  // em "Aguardando câmera...". (React ainda não tipa onCancel em <input>.)
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const onCancel = () => setWaitingForCamera(false);
-    el.addEventListener('cancel', onCancel);
-    return () => el.removeEventListener('cancel', onCancel);
-  }, [open]);
-
-  const handleFileSelected = async (selected: File | null) => {
-    setWaitingForCamera(false);
-    if (!selected) {
-      // user cancelou file picker — fecha o sheet (apenas no auto-open).
-      if (autoOpenedRef.current && step === 'capture') {
-        onOpenChange(false);
-      }
-      return;
-    }
-
+  /** Converte (HEIC) e confere a foto. Devolve o arquivo pronto ou null com o motivo no toast. */
+  const prepareFile = async (selected: File, quiet = false): Promise<File | null> => {
+    const name = batchTotal > 1 ? ` (${selected.name})` : '';
     if (selected.size > MAX_FILE_SIZE) {
-      toast.error('Foto muito grande (>10MB). Tente reduzir a resolução.');
-      return;
+      if (!quiet) toast.error(`Foto muito grande (>10MB)${name}. Tente reduzir a resolução.`);
+      return null;
     }
-
     let processed = selected;
     try {
-      setIsConverting(true);
       processed = await convertHeicToJpeg(selected);
     } catch (err) {
       console.error('HEIC conversion failed:', err);
-      toast.error('Não foi possível converter a imagem. Tente outro formato.');
-      setIsConverting(false);
-      return;
+      if (!quiet) toast.error(`Não foi possível converter a imagem${name}. Tente outro formato.`);
+      return null;
     }
-    setIsConverting(false);
-
     const problem = await receiptFileProblem(processed);
     if (problem) {
-      toast.error(problem);
-      return;
+      if (!quiet) toast.error(name ? `${problem}${name}` : problem);
+      return null;
     }
+    return processed;
+  };
+
+  // Lote: enquanto a pessoa confere a nota atual, a próxima já é convertida e lida.
+  useEffect(() => {
+    const next = queue[0];
+    if (step === 'capture' || !next || preparedRef.current.has(next)) return;
+    preparedRef.current.add(next);
+    let cancelled = false;
+    void prepareFile(next, true).then((processed) => {
+      if (!processed || cancelled) return;
+      preparedRef.current.add(processed);
+      prefetchReceiptReading(processed);
+      setQueue((q) => (q[0] === next ? [processed, ...q.slice(1)] : q));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue, step]);
+
+  const handleFileSelected = async (selected: File | null): Promise<boolean> => {
+    if (!selected) return false;
+
+    setIsConverting(true);
+    const processed = await prepareFile(selected);
+    setIsConverting(false);
+    if (!processed) return false;
 
     setFile(processed);
 
@@ -263,15 +267,82 @@ export function QuickExpenseSheet({
     validation.validate(processed, today, 0);
 
     setStep('review');
+    return true;
+  };
+
+  /** Galeria: uma foto segue o fluxo normal; várias viram fila. */
+  const handleGalleryFiles = async (picked: File[]) => {
+    if (picked.length === 0) return;
+    let files = picked;
+    if (files.length > MAX_BATCH_FILES) {
+      toast.warning(`Dá para lançar até ${MAX_BATCH_FILES} notas por vez. Seguem as primeiras ${MAX_BATCH_FILES}.`);
+      files = files.slice(0, MAX_BATCH_FILES);
+    }
+    setBatchTotal(files.length);
+    setSavedCount(0);
+    await startFrom(files);
+  };
+
+  /** Abre a primeira nota que der para ler; as que não abrem são puladas com aviso. */
+  const startFrom = async (files: File[]) => {
+    let rest = files;
+    while (rest.length > 0) {
+      const [current, ...others] = rest;
+      setQueue(others);
+      if (await handleFileSelected(current)) return true;
+      rest = others;
+    }
+    setQueue([]);
+    return false;
+  };
+
+  /** Fecha a nota atual (lançada ou pulada) e abre a próxima do lote, se houver. */
+  const finishCurrent = async (saved: boolean) => {
+    const done = savedCount + (saved ? 1 : 0);
+    if (saved) {
+      setSavedCount(done);
+      onCreated?.();
+    }
+    if (queue.length > 0) {
+      setFile(null);
+      setPreview(null);
+      validation.reset();
+      setIsEvent(false);
+      setEventNote('');
+      setFoodDays('1');
+      form.reset({ date: new Date(), description: '', amount: '' });
+      foodCap.reset();
+      // A categoria fica: num lote ela costuma ser a mesma (ex.: refeições do mês).
+      if (await startFrom(queue)) return;
+    }
+    if (batchTotal > 1) {
+      toast.success(done === 1 ? '1 despesa lançada.' : `${done} despesas lançadas.`);
+    }
+    onOpenChange(false);
   };
 
   const handleRetake = () => {
     setFile(null);
     setPreview(null);
     validation.reset();
-    autoOpenedRef.current = false;
     setStep('capture');
   };
+
+  const inBatch = batchTotal > 1;
+  const batchPosition = batchTotal - queue.length;
+  const skipButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={() => void finishCurrent(false)}
+      disabled={createExpense.isPending}
+      className="h-10 gap-2"
+      data-testid="skip-note-btn"
+    >
+      <SkipForward className="h-4 w-4" />
+      {queue.length > 0 ? 'Pular esta nota' : 'Pular e terminar'}
+    </Button>
+  );
 
   // A despesa já existe quando isto roda; se o upload falhar, ela fica sem anexo e
   // o usuário precisa saber — não pode parecer que o comprovante foi junto.
@@ -352,8 +423,7 @@ export function QuickExpenseSheet({
         receipt_hash: file ? await receiptHash(file) : null,
       });
       await saveReceipt(result);
-      onCreated?.();
-      onOpenChange(false);
+      await finishCurrent(true);
     } catch (err) {
       // toast já vem do useCreateExpenseInReport.onError
       console.error('quick save failed', err);
@@ -394,8 +464,7 @@ export function QuickExpenseSheet({
         receipt_hash: file ? await receiptHash(file) : null,
       });
       await saveReceipt(result);
-      onCreated?.();
-      onOpenChange(false);
+      await finishCurrent(true);
     } catch (err) {
       console.error('edit submit failed', err);
     }
@@ -413,8 +482,6 @@ export function QuickExpenseSheet({
     foodCap.reset();
     // Nota lida → campo com o lançado (até o teto, se alimentação).
     foodCap.applyNote(extracted?.extracted_amount_cents);
-    // "Digitar sem foto" pode vir de "Aguardando câmera..."; sem isso o Voltar caía nele.
-    setWaitingForCamera(false);
     setStep('edit');
   };
 
@@ -562,53 +629,56 @@ export function QuickExpenseSheet({
         ref={galleryRef}
         type="file"
         accept="image/*"
+        multiple
         hidden
         data-testid="quick-expense-gallery-input"
         onChange={(e) => {
-          handleFileSelected(e.target.files?.[0] ?? null);
+          void handleGalleryFiles(Array.from(e.target.files ?? []));
           e.target.value = '';
         }}
       />
 
       {step === 'capture' && (
         <div
-          className="flex flex-col items-center justify-center py-12 gap-4"
+          // Celular: compacto para os três botões caberem sem rolar.
+          className="flex flex-col items-center justify-center py-4 sm:py-12 gap-3 sm:gap-4"
           data-testid="step-capture"
         >
           {isConverting ? (
             <>
               <O2Rings size={56} spinning fast />
-              <p className="o2-eyebrow">Convertendo foto...</p>
-            </>
-          ) : waitingForCamera ? (
-            <>
-              <O2Rings size={56} spinning fast />
-              <p className="o2-eyebrow">Aguardando câmera...</p>
-              <CaptureAlternatives
-                onGallery={() => galleryRef.current?.click()}
-                onManual={goToEdit}
-              />
+              <p className="o2-eyebrow">Preparando foto...</p>
             </>
           ) : (
             <>
-              <Camera className="h-12 w-12 text-muted-foreground" />
+              <Camera className="h-8 w-8 sm:h-12 sm:w-12 text-muted-foreground" />
               <p className="text-sm text-muted-foreground text-center max-w-xs">
-                {isMobile
-                  ? 'Toque pra abrir a câmera e fotografar a nota.'
-                  : 'Selecione uma foto da nota fiscal.'}
+                Fotografe a nota agora ou escolha fotos que você já tem. Dá para escolher várias notas de uma vez.
               </p>
-              <Button
-                onClick={() => inputRef.current?.click()}
-                className="h-12 gap-2"
-                data-testid="open-camera-btn"
-              >
-                <Camera className="h-5 w-5" />
-                {isMobile ? 'Abrir câmera' : 'Selecionar foto'}
-              </Button>
-              <CaptureAlternatives
-                onGallery={isMobile ? () => galleryRef.current?.click() : undefined}
-                onManual={goToEdit}
-              />
+              <div className="flex w-full max-w-xs flex-col gap-2">
+                {isMobile && (
+                  <Button
+                    onClick={() => inputRef.current?.click()}
+                    className="h-12 gap-2"
+                    data-testid="open-camera-btn"
+                  >
+                    <Camera className="h-5 w-5" />
+                    Tirar foto
+                  </Button>
+                )}
+                <Button
+                  variant={isMobile ? 'outline' : 'default'}
+                  onClick={() => galleryRef.current?.click()}
+                  className="h-12 gap-2"
+                  data-testid="open-gallery-btn"
+                >
+                  <Images className="h-5 w-5" />
+                  {isMobile ? 'Escolher da galeria' : 'Selecionar fotos'}
+                </Button>
+                <Button type="button" variant="ghost" className="h-11" onClick={goToEdit}>
+                  Digitar sem foto
+                </Button>
+              </div>
             </>
           )}
         </div>
@@ -621,7 +691,8 @@ export function QuickExpenseSheet({
               <img
                 src={preview}
                 alt="Preview da nota fiscal"
-                className="w-full max-h-64 object-contain"
+                // Celular: foto menor para valor, categoria e Salvar caberem sem rolar.
+                className="w-full max-h-32 sm:max-h-64 object-contain"
               />
               {/* Linha de scan verde varrendo o comprovante durante o OCR. */}
               {validation.status === 'validating' && (
@@ -680,13 +751,12 @@ export function QuickExpenseSheet({
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="o2-eyebrow">Data</span>
                   <span className={cn('o2-num font-medium', validation.review.date && 'text-[hsl(var(--status-event))]')}>
-                    {extractedSummary.date
-                      ? format(
-                          new Date(extractedSummary.date + 'T00:00:00'),
-                          'dd/MM/yyyy',
-                          { locale: ptBR }
-                        )
-                      : 'não detectada'}
+                    {!extractedSummary.date
+                      ? 'não detectada'
+                      : receiptDateInWindow(extractedSummary.date)
+                      ? format(new Date(extractedSummary.date + 'T00:00:00'), 'dd/MM/yyyy', { locale: ptBR })
+                      : // Fora da janela a despesa entra com hoje: mostra o que vai ser salvo, e a nota ao lado.
+                        `Hoje · nota de ${format(new Date(extractedSummary.date + 'T00:00:00'), 'dd/MM', { locale: ptBR })}`}
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
@@ -729,7 +799,7 @@ export function QuickExpenseSheet({
               data-testid="quick-save-btn"
             >
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Salvar despesa
+              {inBatch && queue.length > 0 ? 'Salvar e ir para a próxima' : 'Salvar despesa'}
             </Button>
             <Button
               variant="outline"
@@ -740,16 +810,20 @@ export function QuickExpenseSheet({
             >
               Editar detalhes
             </Button>
-            <Button
-              variant="ghost"
-              onClick={handleRetake}
-              disabled={isSaving}
-              className="h-10 gap-2"
-              data-testid="retake-btn"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Tirar outra foto
-            </Button>
+            {inBatch ? (
+              skipButton
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={handleRetake}
+                disabled={isSaving}
+                className="h-10 gap-2"
+                data-testid="retake-btn"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Tirar outra foto
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -886,18 +960,20 @@ export function QuickExpenseSheet({
                 Salvar
               </Button>
             </div>
+            {inBatch && <div className="flex justify-center">{skipButton}</div>}
           </form>
         </Form>
       )}
     </div>
   );
 
-  const title =
+  const baseTitle =
     step === 'capture'
       ? 'Nova despesa'
       : step === 'review'
       ? 'Revisar despesa'
       : 'Editar detalhes';
+  const title = inBatch && step !== 'capture' ? `${baseTitle} · nota ${batchPosition} de ${batchTotal}` : baseTitle;
 
   if (isMobile) {
     return (
@@ -937,18 +1013,3 @@ function autoDescription(supplier?: string | null, category?: string | null, dat
 }
 
 const CONFIDENCE_LABELS: Record<string, string> = { high: 'Alta', medium: 'Média', low: 'Baixa' };
-
-function CaptureAlternatives({ onGallery, onManual }: { onGallery?: () => void; onManual: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      {onGallery && (
-        <Button type="button" variant="outline" className="h-11" onClick={onGallery}>
-          Escolher da galeria
-        </Button>
-      )}
-      <Button type="button" variant="ghost" className="h-11" onClick={onManual}>
-        Digitar sem foto
-      </Button>
-    </div>
-  );
-}
