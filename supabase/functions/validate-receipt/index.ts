@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Anthropic from "npm:@anthropic-ai/sdk@1.7.0";
 import {
   GENERIC_ERROR_MESSAGE,
-  OPENAI_BUSY_MESSAGE,
+  AI_BUSY_MESSAGE,
   PAYLOAD_TOO_LARGE_MESSAGE,
   QUOTA_RPC,
   RATE_LIMIT_MESSAGE,
@@ -11,7 +12,7 @@ import {
   quotaOutcome,
 } from "./limits.ts";
 import { type NormalizedReceipt, normalizeExtraction } from "./normalize.ts";
-import { EXTRACT_FUNCTION_NAME, PRIMARY_MODEL, buildChatRequest } from "./prompt.ts";
+import { type ClaudeImageType, PRIMARY_MODEL, buildMessagesRequest, toClaudeImageType } from "./prompt.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,37 +21,54 @@ const corsHeaders = {
 };
 
 type ReadOutcome =
-  | { ok: true; receipt: NormalizedReceipt }
+  | { ok: true; receipt: NormalizedReceipt; model: string }
   | { ok: false; status: number };
 
-/** Uma chamada à OpenAI já normalizada. Resposta sem a função vira leitura vazia (low). */
-async function readReceipt(apiKey: string, model: string, dataUrl: string): Promise<ReadOutcome> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(buildChatRequest(model, dataUrl)),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("OpenAI error:", model, response.status, errorText);
-    return { ok: false, status: response.status };
+/**
+ * Uma chamada ao Claude já normalizada. Recusa, resposta cortada ou JSON
+ * inválido viram leitura vazia (low): a pessoa preenche à mão, nada quebra.
+ */
+async function readReceipt(
+  client: Anthropic,
+  model: string,
+  mediaType: ClaudeImageType,
+  imageBase64: string,
+): Promise<ReadOutcome> {
+  let response: Anthropic.Beta.BetaMessage;
+  try {
+    response = await client.beta.messages.create(buildMessagesRequest(model, mediaType, imageBase64));
+  } catch (error) {
+    if (error instanceof Anthropic.RateLimitError) {
+      return { ok: false, status: 429 };
+    }
+    if (error instanceof Anthropic.APIError) {
+      console.error("Claude error:", model, error.status, error.message);
+      // 529 = API sobrecarregada: para a pessoa é o mesmo "ocupado" do 429.
+      return { ok: false, status: error.status === 529 ? 429 : (error.status ?? 500) };
+    }
+    throw error;
   }
 
-  const data = await response.json();
-  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  // O fallback pode ter respondido com outro modelo: o log mede quem leu.
+  const servedBy = response.model ?? model;
+  if (response.stop_reason === "refusal") {
+    console.error("validate-receipt: leitura recusada", servedBy, response.stop_details?.category ?? null);
+    return { ok: true, receipt: normalizeExtraction({}), model: servedBy };
+  }
+  if (response.stop_reason === "max_tokens") {
+    console.error("validate-receipt: resposta cortada em max_tokens", servedBy);
+  }
+
   let raw: unknown = {};
-  if (toolCall?.function?.name === EXTRACT_FUNCTION_NAME && toolCall.function.arguments) {
+  const text = response.content.find((block) => block.type === "text");
+  if (text && text.type === "text") {
     try {
-      raw = JSON.parse(toolCall.function.arguments);
+      raw = JSON.parse(text.text);
     } catch {
-      console.error("validate-receipt: argumentos inválidos do", model);
+      console.error("validate-receipt: JSON inválido do", servedBy);
     }
   }
-  return { ok: true, receipt: normalizeExtraction(raw) };
+  return { ok: true, receipt: normalizeExtraction(raw), model: servedBy };
 }
 
 serve(async (req) => {
@@ -59,7 +77,7 @@ serve(async (req) => {
   }
 
   try {
-    // JWT obrigatório; a cota por usuário é conferida antes de chamar a OpenAI.
+    // JWT obrigatório; a cota por usuário é conferida antes de chamar o Claude.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
       return new Response(
@@ -90,10 +108,10 @@ serve(async (req) => {
       );
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) {
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
       return new Response(
-        JSON.stringify({ error: "OPENAI_API_KEY not configured" }),
+        JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -123,9 +141,8 @@ serve(async (req) => {
       );
     }
 
-    // Validate supported formats
-    const supportedTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
-    if (!supportedTypes.includes(mime_type)) {
+    const mediaType = toClaudeImageType(mime_type);
+    if (!mediaType) {
       return new Response(
         JSON.stringify({
           ...normalizeExtraction({}),
@@ -153,14 +170,13 @@ serve(async (req) => {
       );
     }
 
-    const dataUrl = `data:${mime_type};base64,${image_base64}`;
-
-    const read = await readReceipt(OPENAI_API_KEY, PRIMARY_MODEL, dataUrl);
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const read = await readReceipt(client, PRIMARY_MODEL, mediaType, image_base64);
 
     if (!read.ok) {
       if (read.status === 429) {
         return new Response(
-          JSON.stringify({ error: OPENAI_BUSY_MESSAGE }),
+          JSON.stringify({ error: AI_BUSY_MESSAGE }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -171,7 +187,7 @@ serve(async (req) => {
     }
 
     const result = read.receipt;
-    const modelUsed = PRIMARY_MODEL;
+    const modelUsed = read.model;
 
     // Sem valores no log: só qual modelo respondeu e por quê, para medir custo e acerto.
     console.log(JSON.stringify({

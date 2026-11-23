@@ -1,11 +1,10 @@
 // Prompt e schema da leitura de comprovante. Módulo puro (sem Deno).
 import { EXPENSE_KIND_HINTS, RECEIPT_ISSUES, RECEIPT_TYPES } from "./normalize.ts";
 
-// Escolhido em teste com notas reais e sintéticas (out/2026): o gpt-4o-mini
-// inventava valor e ano com confiança alta; o gpt-4.1 acertou mais e devolveu
-// null onde a foto não mostrava o total. Em imagem o custo é parecido.
-export const PRIMARY_MODEL = "gpt-4.1";
-export const EXTRACT_FUNCTION_NAME = "extract_receipt_data";
+// Claude Opus 5.5 com saída estruturada (nov/2026, troca da OpenAI): o schema
+// garante JSON válido sem forçar ferramenta. Antes era o gpt-4.1, escolhido em
+// teste com notas reais porque o gpt-4o-mini inventava valor e ano.
+export const PRIMARY_MODEL = "claude-opus-5-5";
 
 export const SYSTEM_PROMPT = [
   "Você lê comprovantes de despesa brasileiros para um app de reembolso. Os tipos mais comuns:",
@@ -57,86 +56,90 @@ export const USER_PROMPT =
 
 const CONFIDENCE_ENUM = ["high", "medium", "low"];
 
-export const EXTRACT_TOOL = {
-  type: "function",
-  function: {
-    name: EXTRACT_FUNCTION_NAME,
-    description: "Extrai os dados de um comprovante de despesa brasileiro.",
-    parameters: {
-      type: "object",
-      properties: {
-        extracted_date: {
-          type: ["string", "null"],
-          description: "Data de emissão no formato YYYY-MM-DD. Null se não identificada.",
-        },
-        extracted_amount_cents: {
-          type: ["integer", "null"],
-          description: "Total efetivamente pago em centavos (R$ 1.234,56 = 123456). Null se não identificado.",
-        },
-        extracted_cnpj: {
-          type: ["string", "null"],
-          description: "CNPJ do emitente, só dígitos. Null se não houver.",
-        },
-        extracted_supplier: {
-          type: ["string", "null"],
-          description: "Nome fantasia do estabelecimento (ou razão social), curto. Null se não identificado.",
-        },
-        receipt_type: {
-          type: "string",
-          enum: [...RECEIPT_TYPES],
-          description: "Tipo do documento.",
-        },
-        confidence: {
-          type: "string",
-          enum: CONFIDENCE_ENUM,
-          description: "Confiança geral na leitura.",
-        },
-        amount_confidence: {
-          type: "string",
-          enum: CONFIDENCE_ENUM,
-          description: "Confiança no valor total pago.",
-        },
-        date_confidence: {
-          type: "string",
-          enum: CONFIDENCE_ENUM,
-          description: "Confiança na data de emissão.",
-        },
-        issues: {
-          type: "array",
-          items: { type: "string", enum: [...RECEIPT_ISSUES] },
-          description: "Problemas da foto ou do documento. Vazio se nenhum.",
-        },
-        expense_kind_hint: {
-          type: "string",
-          enum: [...EXPENSE_KIND_HINTS],
-          description: "Natureza provável da despesa.",
-        },
-      },
-      required: ["confidence", "amount_confidence", "date_confidence", "issues"],
-      additionalProperties: false,
+// Saída estruturada exige todo campo em `required`; o que pode faltar na foto
+// aceita null (o normalize trata null como "não lido").
+const nullable = (type: "string" | "integer", description: string) => ({
+  anyOf: [{ type }, { type: "null" }],
+  description,
+});
+
+export const RECEIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    extracted_date: nullable("string", "Data de emissão no formato YYYY-MM-DD. Null se não identificada."),
+    extracted_amount_cents: nullable(
+      "integer",
+      "Total efetivamente pago em centavos (R$ 1.234,56 = 123456). Null se não identificado.",
+    ),
+    extracted_cnpj: nullable("string", "CNPJ do emitente, só dígitos. Null se não houver."),
+    extracted_supplier: nullable(
+      "string",
+      "Nome fantasia do estabelecimento (ou razão social), curto. Null se não identificado.",
+    ),
+    receipt_type: { type: "string", enum: [...RECEIPT_TYPES], description: "Tipo do documento." },
+    confidence: { type: "string", enum: CONFIDENCE_ENUM, description: "Confiança geral na leitura." },
+    amount_confidence: { type: "string", enum: CONFIDENCE_ENUM, description: "Confiança no valor total pago." },
+    date_confidence: { type: "string", enum: CONFIDENCE_ENUM, description: "Confiança na data de emissão." },
+    issues: {
+      type: "array",
+      items: { type: "string", enum: [...RECEIPT_ISSUES] },
+      description: "Problemas da foto ou do documento. Vazio se nenhum.",
+    },
+    expense_kind_hint: {
+      type: "string",
+      enum: [...EXPENSE_KIND_HINTS],
+      description: "Natureza provável da despesa.",
     },
   },
-} as const;
+  required: [
+    "extracted_date",
+    "extracted_amount_cents",
+    "extracted_cnpj",
+    "extracted_supplier",
+    "receipt_type",
+    "confidence",
+    "amount_confidence",
+    "date_confidence",
+    "issues",
+    "expense_kind_hint",
+  ],
+  additionalProperties: false,
+};
 
-/** Corpo do chat/completions. */
-export function buildChatRequest(model: string, dataUrl: string) {
+// Formatos de imagem que a API do Claude aceita; "image/jpg" vira "image/jpeg".
+export const CLAUDE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+export type ClaudeImageType = (typeof CLAUDE_IMAGE_TYPES)[number];
+
+export function toClaudeImageType(mimeType: string): ClaudeImageType | null {
+  const t = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+  return (CLAUDE_IMAGE_TYPES as readonly string[]).includes(t) ? (t as ClaudeImageType) : null;
+}
+
+/**
+ * Corpo do messages.create (beta, por causa do fallback). Sem temperature: a
+ * API atual recusa o parâmetro; a estabilidade da leitura vem do schema e do
+ * prompt. Effort explícito porque o padrão do Opus 5.5 é medium e pode mudar.
+ * fallbacks "default": se o modelo recusar a foto, a própria API tenta outro.
+ */
+export function buildMessagesRequest(model: string, mediaType: ClaudeImageType, imageBase64: string) {
   return {
     model,
-    // Leitura de valor não pode variar entre chamadas: o mesmo cupom já saiu
-    // R$ 189,00 numa leitura e R$ 189,10 na seguinte.
-    temperature: 0,
+    max_tokens: 16000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default" as const,
+    system: SYSTEM_PROMPT,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
       {
-        role: "user",
+        role: "user" as const,
         content: [
-          { type: "text", text: USER_PROMPT },
-          { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+          { type: "image" as const, source: { type: "base64" as const, media_type: mediaType, data: imageBase64 } },
+          { type: "text" as const, text: USER_PROMPT },
         ],
       },
     ],
-    tools: [EXTRACT_TOOL],
-    tool_choice: { type: "function", function: { name: EXTRACT_FUNCTION_NAME } },
-    max_tokens: 500,
+    output_config: {
+      effort: "medium" as const,
+      format: { type: "json_schema" as const, schema: RECEIPT_SCHEMA },
+    },
   };
 }
