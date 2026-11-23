@@ -182,6 +182,36 @@ function formatCurrency(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 }
 
+type ReadingOutcome = { data: ({ error?: string } & Record<string, unknown>) | null; error: unknown };
+
+// Leitura já disparada por foto: no lote, a próxima nota é lida enquanto a pessoa
+// confere a atual, e o validate aproveita a resposta em vez de chamar de novo.
+const pendingReadings = new WeakMap<File, Promise<ReadingOutcome>>();
+
+async function invokeReading(file: File): Promise<ReadingOutcome> {
+  // Reduz no cliente (máx. 1600px, JPEG 0,8): foto de celular cheia batia no 413.
+  const { base64: image_base64, mimeType: sentMime } = await prepareImageForOcr(file);
+  const { data, error } = await supabase.functions.invoke('validate-receipt', {
+    body: { image_base64, mime_type: sentMime },
+  });
+  return { data, error };
+}
+
+/** Dispara a leitura da foto sem mexer na tela; o próximo validate(file) usa a resposta. */
+export function prefetchReceiptReading(file: File): void {
+  if (!file.type.startsWith('image/') || pendingReadings.has(file)) return;
+  const reading = invokeReading(file);
+  // Falhou antes de ser usada: esquece, e o validate tenta de novo.
+  reading.catch(() => pendingReadings.delete(file));
+  pendingReadings.set(file, reading);
+}
+
+function takeReading(file: File): Promise<ReadingOutcome> {
+  const pending = pendingReadings.get(file);
+  pendingReadings.delete(file);
+  return pending ?? invokeReading(file);
+}
+
 export function useValidateReceipt() {
   const [state, setRawState] = useState<ValidationState>({
     status: 'idle',
@@ -218,12 +248,7 @@ export function useValidateReceipt() {
         return;
       }
 
-      // Reduz no cliente (máx. 1600px, JPEG 0,8): foto de celular cheia batia no 413.
-      const { base64: image_base64, mimeType: sentMime } = await prepareImageForOcr(file);
-
-      const { data, error } = await supabase.functions.invoke('validate-receipt', {
-        body: { image_base64, mime_type: sentMime },
-      });
+      const { data, error } = await takeReading(file);
 
       if (error) {
         // 'error' só mostra o aviso; não trava o salvar.

@@ -28,7 +28,14 @@ export function receiptDateInWindow(receiptDate: string): boolean {
   return d <= endOfToday() && d >= minExpenseDate();
 }
 
-/** Aviso quando a nota está fora da janela e a despesa fica com a data de hoje. */
+/**
+ * Aviso quando a nota está fora da janela e a despesa fica com a data de hoje.
+ * Diz o que vai acontecer e quem decide: "data de hoje" sem explicação parecia erro.
+ */
 export function receiptOutOfWindowWarning(receiptDate: string): string {
-  return `A nota é de ${formatDate(receiptDate)} (fora da janela de ${MAX_EXPENSE_AGE_DAYS} dias). A despesa fica com a data de hoje e o gestor verá o aviso.`;
+  const nota = formatDate(receiptDate);
+  if (parseDateOnly(receiptDate) > endOfToday()) {
+    return `A data lida na nota (${nota}) está no futuro. A despesa entra com a data de hoje; se a nota for de outro dia, ajuste em "Editar detalhes".`;
+  }
+  return `Essa nota é de ${nota}, de mais de ${MAX_EXPENSE_AGE_DAYS} dias atrás (fora da janela de ${MAX_EXPENSE_AGE_DAYS} dias). Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`;
 }

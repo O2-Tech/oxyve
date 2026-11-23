@@ -106,6 +106,10 @@ const RPC: Record<string, () => unknown> = {
   get_or_create_current_report: report,
   get_or_create_report_for_date: report,
   get_org_members: () => [],
+  create_expense_in_current_report: () => ({
+    expense: { id: '00000000-0000-4000-8000-0000000000e1' },
+    report: report(),
+  }),
 };
 
 function tableRows(table: string, role: Role): unknown[] {
@@ -123,8 +127,14 @@ function tableRows(table: string, role: Role): unknown[] {
   }
 }
 
+/** Resposta de uma edge function falsa (ex.: a leitura da nota no validate-receipt). */
+export type FunctionMock = (name: string) => unknown;
+
 /** Planta a sessão e intercepta o Supabase. Chamar antes do primeiro goto. */
-export async function mockSupabase(page: Page, { role = 'employee' as Role } = {}) {
+export async function mockSupabase(
+  page: Page,
+  { role = 'employee' as Role, functions }: { role?: Role; functions?: FunctionMock } = {},
+) {
   const session = {
     access_token: fakeJwt(),
     refresh_token: 'e2e-refresh',
@@ -147,7 +157,9 @@ export async function mockSupabase(page: Page, { role = 'employee' as Role } = {
 
     if (path.startsWith('/auth/v1/user')) return json(route, user());
     if (path.startsWith('/auth/v1/')) return json(route, session);
-    if (path.startsWith('/functions/v1/')) return json(route, {});
+    if (path.startsWith('/functions/v1/')) {
+      return json(route, functions?.(path.slice('/functions/v1/'.length)) ?? {});
+    }
     if (path.startsWith('/storage/v1/')) return json(route, []);
 
     const rpc = path.match(/^\/rest\/v1\/rpc\/(\w+)/);

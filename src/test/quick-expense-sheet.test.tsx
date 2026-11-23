@@ -38,7 +38,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   }),
 }));
 
-// useIsMobile fixo em false (desktop) — file picker em vez de auto-camera.
+// useIsMobile fixo em false (desktop) — só o seletor de fotos, sem câmera.
 vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => false,
 }));
@@ -61,14 +61,15 @@ describe('QuickExpenseSheet — state machine', () => {
     cleanup();
   });
 
-  it('inicia em step "capture" mostrando botão pra abrir câmera/picker', () => {
+  it('inicia em step "capture" com "Selecionar fotos" (no computador não há câmera)', () => {
     render(
       <QuickExpenseSheet open={true} onOpenChange={() => {}} />,
       { wrapper },
     );
 
     expect(screen.getByTestId('step-capture')).toBeInTheDocument();
-    expect(screen.getByTestId('open-camera-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('open-gallery-btn')).toHaveTextContent('Selecionar fotos');
+    expect(screen.queryByTestId('open-camera-btn')).toBeNull();
     expect(screen.queryByTestId('step-review')).toBeNull();
     expect(screen.queryByTestId('step-edit')).toBeNull();
   });
