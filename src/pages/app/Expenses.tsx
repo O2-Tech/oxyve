@@ -17,7 +17,7 @@ import { AddToReportDialog } from '@/components/expenses/AddToReportDialog';
 import { ExpenseFiltersPopover, AdvancedFilters } from '@/components/expenses/ExpenseFiltersPopover';
 import { ExpensesTable } from '@/components/expenses/ExpensesTable';
 import { ExpenseCard } from '@/components/expenses/ExpenseCard';
-import { canAddExpenseToReport, canDeleteExpense } from '@/components/expenses/expenseActions';
+import { canAddExpenseToReport, canDeleteExpense, canSelectExpense } from '@/components/expenses/expenseActions';
 import { ReceiptPreviewDialog } from '@/components/reports/ReceiptPreviewDialog';
 import {
   useExpenses,
@@ -114,12 +114,22 @@ export default function Expenses() {
 
   // Lote segue as mesmas regras do menu individual (expenseActions): só despesas
   // próprias, e "adicionar" exige avulsa sem decisão pendente do gestor.
-  const canDeleteSelected = useMemo(() => {
-    return (
-      selectedExpenses.length > 0 &&
-      selectedExpenses.every((e) => canDeleteExpense(e, profile?.id))
-    );
-  }, [selectedExpenses, profile?.id]);
+  // Excluir vale para as que podem (rascunhos próprios); as já enviadas ficam como
+  // estão e o aviso diz quantas. Antes o botão sumia se uma só não pudesse.
+  const deletableSelected = useMemo(
+    () => selectedExpenses.filter((e) => canDeleteExpense(e, profile?.id)),
+    [selectedExpenses, profile?.id],
+  );
+  const canDeleteSelected = deletableSelected.length > 0;
+  const keptOnDelete = selectedExpenses.length - deletableSelected.length;
+
+  // "Selecionar todas" (celular): só as próprias, como na tabela do computador.
+  const selectableExpenses = useMemo(
+    () => (expenses ?? []).filter((e) => canSelectExpense(e, profile?.id)),
+    [expenses, profile?.id],
+  );
+  const allSelected =
+    selectableExpenses.length > 0 && selectableExpenses.every((e) => selectedIds.has(e.id));
 
   const canAddToReport = useMemo(() => {
     return (
@@ -178,8 +188,8 @@ export default function Expenses() {
 
   const confirmBulkDelete = async () => {
     // Só o que está na lista e passou nas regras (a seleção pode ter ids de outra aba).
-    if (selectedExpenses.length > 0) {
-      await deleteExpenses.mutateAsync(selectedExpenses.map((e) => e.id));
+    if (deletableSelected.length > 0) {
+      await deleteExpenses.mutateAsync(deletableSelected.map((e) => e.id));
       setIsBulkDeleteOpen(false);
       setSelectedIds(new Set());
     }
@@ -228,7 +238,7 @@ export default function Expenses() {
                     className="gap-2 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
-                    Excluir ({selectedExpenses.length})
+                    Excluir ({deletableSelected.length})
                   </Button>
                 )}
               </>
@@ -280,7 +290,7 @@ export default function Expenses() {
               className="flex-1 gap-1 text-destructive"
             >
               <Trash2 className="h-4 w-4" />
-              Excluir ({selectedExpenses.length})
+              Excluir ({deletableSelected.length})
             </Button>
           )}
         </div>
@@ -432,6 +442,25 @@ export default function Expenses() {
       ) : isMobile ? (
         // Mobile: Card layout
         <div className="space-y-3">
+          {selectableExpenses.length > 1 && (
+            <div className="flex items-center justify-between gap-2" data-testid="mobile-select-all">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-11 px-2"
+                onClick={() =>
+                  setSelectedIds(allSelected ? new Set() : new Set(selectableExpenses.map((e) => e.id)))
+                }
+              >
+                {allSelected ? 'Desmarcar todas' : `Selecionar todas (${selectableExpenses.length})`}
+              </Button>
+              {selectedExpenses.length > 0 && !allSelected && (
+                <Button variant="ghost" size="sm" className="h-11 px-2" onClick={() => setSelectedIds(new Set())}>
+                  Limpar seleção
+                </Button>
+              )}
+            </div>
+          )}
           {expenses?.map((expense, i) => (
             <div
               key={expense.id}
@@ -512,7 +541,12 @@ export default function Expenses() {
         open={isBulkDeleteOpen}
         onOpenChange={setIsBulkDeleteOpen}
         title="Excluir despesas"
-        description={`Tem certeza que deseja excluir ${selectedExpenses.length} despesa(s)? Esta ação não pode ser desfeita.`}
+        description={
+          `Tem certeza que deseja excluir ${deletableSelected.length} despesa(s)? Esta ação não pode ser desfeita.` +
+          (keptOnDelete > 0
+            ? ` ${keptOnDelete === 1 ? '1 das selecionadas já foi enviada e fica' : `${keptOnDelete} das selecionadas já foram enviadas e ficam`} como está.`
+            : '')
+        }
         confirmLabel="Excluir"
         variant="destructive"
         onConfirm={confirmBulkDelete}

@@ -1,6 +1,7 @@
 /**
  * Tela Despesas — seleção em lote só com despesas próprias, "Adicionar a relatório"
- * individual independente da seleção, "Ver comprovante" e o atalho ?new=1.
+ * individual independente da seleção, "Ver comprovante", o atalho ?new=1 e a exclusão
+ * em lote (selecionar todas no celular; só rascunhos são apagados).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -12,6 +13,7 @@ const isMobile = vi.hoisted(() => ({ value: false }));
 const addToReportProps = vi.hoisted(() => vi.fn());
 const formProps = vi.hoisted(() => vi.fn());
 const receiptProps = vi.hoisted(() => vi.fn());
+const deleteMany = vi.hoisted(() => vi.fn());
 
 const expense = (over: Partial<Expense>): Expense =>
   ({
@@ -53,7 +55,7 @@ vi.mock('@/hooks/useExpenses', () => ({
   useExpenses: () => ({ data: list.rows, isLoading: false }),
   useExpenseCounts: () => ({ data: undefined }),
   useDeleteExpense: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteExpenses: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteExpenses: () => ({ mutateAsync: deleteMany, isPending: false }),
 }));
 vi.mock('@/components/expenses/ExpenseFiltersPopover', () => ({ ExpenseFiltersPopover: () => null }));
 vi.mock('@/components/expenses/MultiDayExpenseDialog', () => ({ MultiDayExpenseDialog: () => null }));
@@ -161,5 +163,29 @@ describe('Despesas', () => {
     renderPage();
     expect(screen.getByText('Nova despesa')).toBeInTheDocument();
     expect(screen.getAllByText('Vários dias').length).toBeGreaterThan(0);
+  });
+
+  it('excluir em lote apaga só os rascunhos e avisa quantas enviadas ficam', async () => {
+    list.rows = [
+      expense({ id: 'm1', description: 'Minha 1' }),
+      expense({ id: 's1', description: 'Enviada', status: 'submitted' }),
+    ];
+    renderPage();
+    fireEvent.click(screen.getByLabelText('Selecionar despesa Minha 1'));
+    fireEvent.click(screen.getByLabelText('Selecionar despesa Enviada'));
+    fireEvent.click(screen.getAllByText('Excluir (1)')[0]);
+    expect(screen.getByText(/1 das selecionadas já foi enviada e fica como está/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+    await vi.waitFor(() => expect(deleteMany).toHaveBeenCalledWith(['m1']));
+  });
+
+  it('celular: "Selecionar todas" marca só as próprias e libera excluir em lote', () => {
+    isMobile.value = true;
+    renderPage();
+    fireEvent.click(screen.getByText('Selecionar todas (3)'));
+    expect(screen.getAllByText('Excluir (3)').length).toBeGreaterThan(0);
+    expect(screen.getByText('Desmarcar todas')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Desmarcar todas'));
+    expect(screen.queryByText(/Excluir \(/)).toBeNull();
   });
 });
