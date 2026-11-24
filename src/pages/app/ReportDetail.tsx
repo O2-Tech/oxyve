@@ -34,8 +34,9 @@ import {
   ArrowLeft, Send, CheckCircle2, XCircle, Trash2, Receipt, Wallet,
   MessageSquare, Clock, AlertTriangle, Loader2, Paperclip,
   ListChecks, ThumbsUp, ThumbsDown, MoreHorizontal, Download, FileSpreadsheet, FileText, History,
-  Undo2, Info, Copy, CalendarX,
+  Undo2, Info, Copy, CalendarX, Plus,
 } from 'lucide-react';
+import { AddExpensesToReportDialog } from '@/components/reports/AddExpensesToReportDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -158,6 +159,7 @@ export default function ReportDetail() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [removeTarget, setRemoveTarget] = useState<ReportExpense | null>(null);
+  const [isAddExpensesOpen, setIsAddExpensesOpen] = useState(false);
   const [receiptTarget, setReceiptTarget] = useState<{ path: string; title: string } | null>(null);
 
   // Individual expense rejection dialog
@@ -548,6 +550,19 @@ export default function ReportDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setIsAddExpensesOpen(true)}
+              disabled={busy}
+              className={cn('gap-2', actionSize)}
+              data-testid="add-expenses-btn"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Adicionar despesas</span>
+              <span className="sm:hidden">Adicionar</span>
+            </Button>
+          )}
           {canEdit && (
             <Button
               onClick={() => setIsSubmitOpen(true)}
@@ -1036,6 +1051,15 @@ export default function ReportDetail() {
       />
 
       {/* Remover item — só desvincula; a despesa segue existindo. */}
+      {canEdit && id && (
+        <AddExpensesToReportDialog
+          reportId={id}
+          reportTitle={report.title}
+          open={isAddExpensesOpen}
+          onOpenChange={setIsAddExpensesOpen}
+        />
+      )}
+
       <ConfirmDialog
         open={!!removeTarget}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
