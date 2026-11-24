@@ -215,13 +215,14 @@ describe('QuickExpenseSheet — teto de alimentação', () => {
     await waitFor(() => expect(amount.value).toBe('70,00'));
   });
 
-  it('nota fora da janela de 20 dias: salva com a data de hoje, avisa e guarda a data da nota', async () => {
-    const old = format(new Date(Date.now() - 29 * 86400000), 'yyyy-MM-dd');
+  it('nota fora da janela de lançamento: salva com a data de hoje, avisa e guarda a data da nota', async () => {
+    // 60 dias: sempre antes da janela (início do ciclo, no máximo ~31 dias, ou 20 dias).
+    const old = format(new Date(Date.now() - 60 * 86400000), 'yyyy-MM-dd');
     invoke.mockResolvedValue({ ...reading(2500), data: { ...reading(2500).data, extracted_date: old } });
     attachReceipt.mockResolvedValue('path');
     render(<QuickExpenseSheet open onOpenChange={() => {}} />, { wrapper });
     await photo();
-    expect(screen.getByTestId('receipt-date-notice')).toHaveTextContent(/fora da janela de 20 dias/);
+    expect(screen.getByTestId('receipt-date-notice')).toHaveTextContent(/a data mais antiga que ainda dá para lançar/);
     fireEvent.change(categorySelect(), { target: { value: 'park1' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('quick-save-btn'));

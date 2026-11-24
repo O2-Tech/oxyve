@@ -232,7 +232,7 @@ export default function SettingsPolicy() {
                       {(() => {
                         const c = cutoffDay;
                         const fim = c === 1 ? 'último dia do mês' : `dia ${c - 1}`;
-                        return `O ciclo começa no dia ${c} de um mês e termina no ${fim} do mês seguinte. O relatório do ciclo vence no dia ${c}, quando o próximo começa.`;
+                        return `O ciclo começa no dia ${c} de um mês e termina no ${fim} do mês seguinte. O relatório do ciclo vence no último dia do ciclo (${fim}).`;
                       })()}
                     </AlertDescription>
                   </Alert>
@@ -256,7 +256,7 @@ export default function SettingsPolicy() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        Dia em que um ciclo começa e o relatório do anterior vence
+                        Dia em que um ciclo começa; o relatório do anterior vence na véspera
                       </p>
                     </div>
 

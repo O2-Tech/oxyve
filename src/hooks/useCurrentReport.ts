@@ -95,20 +95,21 @@ export const DEFAULT_CYCLE_CUTOFF_DAY = 25;
 /**
  * Limites do ciclo que contém `date` (YYYY-MM-DD), com a mesma conta de
  * get_or_create_report_for_date: começa no dia de corte, termina na véspera do corte
- * seguinte e leva o mês do vencimento no título. Só para exibir — quem cria é o banco.
+ * seguinte e leva o mês desse corte no título. O prazo de envio é o último dia do
+ * ciclo (24/11/2026: era o dia seguinte). Só para exibir — quem cria é o banco.
  */
 export function cycleForDate(date: string, cutoffDayInput?: number | null) {
   const cutoffDay = cutoffDayInput || DEFAULT_CYCLE_CUTOFF_DAY;
   const [y, m, d] = date.split('-').map(Number);
   const start = d >= cutoffDay ? new Date(y, m - 1, cutoffDay) : new Date(y, m - 2, cutoffDay);
-  const due = new Date(start.getFullYear(), start.getMonth() + 1, cutoffDay);
-  const end = new Date(due.getFullYear(), due.getMonth(), due.getDate() - 1);
+  const nextCutoff = new Date(start.getFullYear(), start.getMonth() + 1, cutoffDay);
+  const end = new Date(nextCutoff.getFullYear(), nextCutoff.getMonth(), nextCutoff.getDate() - 1);
   return {
     start_date: ymd(start),
     end_date: ymd(end),
-    due_date: ymd(due),
-    cycle_key: ymd(due).slice(0, 7),
-    title: `Relatório ${MONTH_ABBR[due.getMonth()]} ${due.getFullYear()}`,
+    due_date: ymd(end),
+    cycle_key: ymd(nextCutoff).slice(0, 7),
+    title: `Relatório ${MONTH_ABBR[nextCutoff.getMonth()]} ${nextCutoff.getFullYear()}`,
   };
 }
 
@@ -244,23 +245,46 @@ export function useCreateExpenseMultiday() {
       is_reimbursable?: boolean;
       notes?: string | null;
       is_event?: boolean;
+      /**
+       * Vários períodos no mesmo lançamento (ex.: só dias úteis = um bloco por semana).
+       * Cada bloco é uma chamada atômica; sem isto vale start_date..end_date.
+       */
+      ranges?: Array<{ start_date: string; end_date: string }>;
     }) => {
-      const { data, error } = await supabase.rpc('create_expense_multiday', {
-        p_description: input.description,
-        p_amount_cents_per_day: input.amount_cents_per_day,
-        p_start_date: input.start_date,
-        p_end_date: input.end_date,
-        p_category_id: input.category_id || undefined,
-        p_cost_center_id: input.cost_center_id || undefined,
-        p_project_id: input.project_id || undefined,
-        p_payment_method: input.payment_method || 'personal_card',
-        p_currency: input.currency || 'BRL',
-        p_is_reimbursable: input.is_reimbursable ?? true,
-        p_notes: input.notes || undefined,
-        p_is_event: input.is_event ?? false,
-      });
-      if (error) throw error;
-      return data as unknown as CreateExpenseMultidayResult;
+      const ranges = input.ranges ?? [{ start_date: input.start_date, end_date: input.end_date }];
+      const total: CreateExpenseMultidayResult = { count: 0, expenses: [], possible_duplicates: 0 };
+      for (const range of ranges) {
+        const { data, error } = await supabase.rpc('create_expense_multiday', {
+          p_description: input.description,
+          p_amount_cents_per_day: input.amount_cents_per_day,
+          p_start_date: range.start_date,
+          p_end_date: range.end_date,
+          p_category_id: input.category_id || undefined,
+          p_cost_center_id: input.cost_center_id || undefined,
+          p_project_id: input.project_id || undefined,
+          p_payment_method: input.payment_method || 'personal_card',
+          p_currency: input.currency || 'BRL',
+          p_is_reimbursable: input.is_reimbursable ?? true,
+          p_notes: input.notes || undefined,
+          p_is_event: input.is_event ?? false,
+        });
+        if (error) {
+          // Blocos anteriores já foram salvos: a mensagem diz quantos, para não lançar de novo.
+          if (total.count > 0) {
+            queryClient.invalidateQueries({ queryKey: ['expenses'] });
+            throw new Error(`${total.count} despesa(s) já foram criadas; o restante do período falhou: ${error.message}`);
+          }
+          throw error;
+        }
+        const part = data as unknown as CreateExpenseMultidayResult;
+        total.count += part.count;
+        total.expenses.push(...(part.expenses ?? []));
+        total.possible_duplicates =
+          (total.possible_duplicates ?? 0) +
+          (part.possible_duplicates ??
+            (part.expenses ?? []).filter((x) => x?.possible_duplicate || x?.expense?.possible_duplicate_of).length);
+      }
+      return total;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });

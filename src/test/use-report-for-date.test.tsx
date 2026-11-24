@@ -78,7 +78,8 @@ describe('cycleForDate (espelha get_or_create_report_for_date)', () => {
     expect(cycleForDate('2026-10-10', 24)).toEqual({
       start_date: '2026-09-24',
       end_date: '2026-10-23',
-      due_date: '2026-10-24',
+      // Prazo = último dia do ciclo (24/11/2026: antes era o dia seguinte).
+      due_date: '2026-10-23',
       cycle_key: '2026-10',
       title: 'Relatório Out 2026',
     });

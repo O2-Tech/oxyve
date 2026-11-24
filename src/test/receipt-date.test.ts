@@ -8,6 +8,7 @@ vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 import { format, subDays, addDays } from 'date-fns';
 import { receiptPolicyBlocks, receiptDateNotice, type ValidationResult } from '@/hooks/useValidateReceipt';
 import { receiptDateDiffers, receiptDateHint } from '@/lib/receiptDate';
+import { minExpenseDate } from '@/lib/constants';
 
 const ymd = (d: Date) => format(d, 'yyyy-MM-dd');
 const today = ymd(new Date());
@@ -48,10 +49,10 @@ describe('receiptDateNotice', () => {
       `A data da nota (${br(d)}) é diferente da data da despesa. O gestor verá esse aviso.`,
     );
   });
-  it('nota fora da janela de 20 dias: despesa fica com hoje', () => {
-    const d = ymd(subDays(new Date(), 29));
+  it('nota antes da janela de lançamento: despesa fica com hoje', () => {
+    const d = ymd(subDays(new Date(), 60));
     expect(receiptDateNotice({ ...base, extracted_date: d }, today)).toBe(
-      `Essa nota é de ${br(d)}, de mais de 20 dias atrás (fora da janela de 20 dias). Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`,
+      `Essa nota é de ${br(d)}, antes de ${br(ymd(minExpenseDate()))}, a data mais antiga que ainda dá para lançar. Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`,
     );
     expect(receiptDateNotice({ ...base, extracted_date: ymd(addDays(new Date(), 2)) }, today)).toMatch(/está no futuro/);
   });

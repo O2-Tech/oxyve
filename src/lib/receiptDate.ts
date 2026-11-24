@@ -3,7 +3,7 @@
  * lançamento. O app grava a data lida da nota em expenses.receipt_date; quem lança
  * vê um aviso e o gestor vê o selo na revisão.
  */
-import { formatDate, MAX_EXPENSE_AGE_DAYS, endOfToday, minExpenseDate, parseDateOnly } from '@/lib/constants';
+import { formatDate, endOfToday, minExpenseDate, parseDateOnly } from '@/lib/constants';
 
 export const RECEIPT_DATE_MISMATCH_LABEL = 'Data da nota diferente';
 
@@ -22,7 +22,7 @@ export function receiptDateWarning(receiptDate: string): string {
   return `A data da nota (${formatDate(receiptDate)}) é diferente da data da despesa. O gestor verá esse aviso.`;
 }
 
-/** Data da nota (YYYY-MM-DD) dentro da janela de lançamento (hoje até 20 dias atrás). */
+/** Data da nota (YYYY-MM-DD) dentro da janela de lançamento (hoje até o início do ciclo ou 20 dias atrás). */
 export function receiptDateInWindow(receiptDate: string): boolean {
   const d = parseDateOnly(receiptDate);
   return d <= endOfToday() && d >= minExpenseDate();
@@ -37,5 +37,5 @@ export function receiptOutOfWindowWarning(receiptDate: string): string {
   if (parseDateOnly(receiptDate) > endOfToday()) {
     return `A data lida na nota (${nota}) está no futuro. A despesa entra com a data de hoje; se a nota for de outro dia, ajuste em "Editar detalhes".`;
   }
-  return `Essa nota é de ${nota}, de mais de ${MAX_EXPENSE_AGE_DAYS} dias atrás (fora da janela de ${MAX_EXPENSE_AGE_DAYS} dias). Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`;
+  return `Essa nota é de ${nota}, antes de ${formatDate(minExpenseDate())}, a data mais antiga que ainda dá para lançar. Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`;
 }
