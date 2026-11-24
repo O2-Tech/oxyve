@@ -87,18 +87,26 @@ export const amountFieldError = (input: string): string | null => {
   return null;
 };
 
-// Janela de lançamento (regra do banco: tg_expenses_regras). Datas em meia-noite local.
+// Janela de lançamento (regra do banco: expense_min_date, usada em tg_expenses_regras).
+// Vale o mais antigo entre o início do ciclo atual e 20 dias atrás: o ciclo inteiro
+// sempre entra e, no começo de um ciclo novo, ainda dá para lançar o fim do anterior.
+// Datas em meia-noite local.
 export const MAX_EXPENSE_AGE_DAYS = 20;
 export const endOfToday = (): Date => {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d;
 };
-export const minExpenseDate = (): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - MAX_EXPENSE_AGE_DAYS);
-  return d;
+export const minExpenseDate = (cutoffDay: number = 25): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const twentyDaysAgo = new Date(today);
+  twentyDaysAgo.setDate(today.getDate() - MAX_EXPENSE_AGE_DAYS);
+  const cycleStart =
+    today.getDate() >= cutoffDay
+      ? new Date(today.getFullYear(), today.getMonth(), cutoffDay)
+      : new Date(today.getFullYear(), today.getMonth() - 1, cutoffDay);
+  return cycleStart < twentyDaysAgo ? cycleStart : twentyDaysAgo;
 };
 
 /** Normaliza o que foi digitado no campo Valor para "1.234,56" ao sair do campo. */

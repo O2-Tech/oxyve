@@ -46,7 +46,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { CalendarIcon, Loader2, PartyPopper, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCurrency, parseAmountToCents, formatAmountInput, endOfToday, minExpenseDate } from '@/lib/constants';
-import { multiDaySchema } from './multiDaySchema';
+import { multiDayCount, multiDayRanges, multiDaySchema } from './multiDaySchema';
 import { useActiveExpenseTypes } from '@/hooks/useExpenseTypes';
 import { groupBySector } from '@/lib/categoryGroups';
 import { useCreateExpenseMultiday } from '@/hooks/useCurrentReport';
@@ -82,6 +82,7 @@ export function MultiDayExpenseDialog({
       description: '',
       is_event: false,
       notes: '',
+      weekdays_only: false,
     },
   });
 
@@ -105,20 +106,27 @@ export function MultiDayExpenseDialog({
   const start = form.watch('start_date');
   const end = form.watch('end_date');
   const amountStr = form.watch('amount_per_day');
+  const weekdaysOnly = form.watch('weekdays_only');
 
-  const days =
-    start && end && end >= start ? differenceInCalendarDays(end, start) + 1 : 0;
+  const days = multiDayCount(start, end, weekdaysOnly);
+  const calendarDays = start && end && end >= start ? differenceInCalendarDays(end, start) + 1 : 0;
   const parsedPerDay = parseAmountToCents(amountStr || '');
   const perDayCents = Number.isNaN(parsedPerDay) ? 0 : parsedPerDay;
   const totalCents = days * perDayCents;
 
   const onSubmit = async (data: FormData) => {
+    const ranges = multiDayRanges(data.start_date, data.end_date, data.weekdays_only);
+    if (ranges.length === 0) {
+      form.setError('end_date', { message: 'O período não tem nenhum dia útil.' });
+      return;
+    }
     try {
       await createMultiday.mutateAsync({
         description: data.description,
         amount_cents_per_day: parseAmountToCents(data.amount_per_day),
         start_date: format(data.start_date, 'yyyy-MM-dd'),
         end_date: format(data.end_date, 'yyyy-MM-dd'),
+        ranges: ranges.map((r) => ({ start_date: format(r.start, 'yyyy-MM-dd'), end_date: format(r.end, 'yyyy-MM-dd') })),
         category_id: data.category_id,
         is_event: data.is_event,
         notes: data.is_event ? data.notes?.trim() : undefined,
@@ -218,7 +226,7 @@ export function MultiDayExpenseDialog({
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(d) => d > endOfToday() || d < minExpenseDate()}
+                          disabled={(d) => d > endOfToday() || d < minExpenseDate(policy?.cycle_cutoff_day)}
                           initialFocus
                           className="pointer-events-auto"
                         />
@@ -251,7 +259,7 @@ export function MultiDayExpenseDialog({
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(d) => d > endOfToday() || d < minExpenseDate() || (!!start && d < start)}
+                          disabled={(d) => d > endOfToday() || d < minExpenseDate(policy?.cycle_cutoff_day) || (!!start && d < start)}
                           initialFocus
                           className="pointer-events-auto"
                         />
@@ -289,8 +297,28 @@ export function MultiDayExpenseDialog({
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="weekdays_only"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start justify-between gap-3 rounded-lg border p-3 space-y-0">
+                  <div className="space-y-0.5">
+                    <FormLabel>Só dias úteis</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      {field.value && calendarDays > days
+                        ? `Segunda a sexta: ${calendarDays - days} dia(s) de fim de semana ficam de fora.`
+                        : 'Lança só de segunda a sexta, sem sábado e domingo.'}
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="weekdays-only-switch" />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
             {days > 0 && perDayCents > 0 && (
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm" data-testid="multiday-total">
                 <span className="font-medium">{days}</span> dia(s) ×{' '}
                 <span className="font-medium">{formatCurrency(perDayCents)}</span> ={' '}
                 <span className="font-semibold">{formatCurrency(totalCents)}</span> no total

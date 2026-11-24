@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { amountFieldError, endOfToday, minExpenseDate, MAX_EXPENSE_AGE_DAYS } from '@/lib/constants';
+import { amountFieldError, endOfToday, minExpenseDate } from '@/lib/constants';
 
 // Schema do lançamento de vários dias (separado para teste). Valor pelo mesmo parser do
 // formulário avulso: parseFloat lia "1.200" (hospedagem) como R$ 1,20 por dia, sem aviso.
@@ -15,6 +15,8 @@ export const multiDaySchema = z
     description: z.string().min(1, 'Descrição obrigatória'),
     is_event: z.boolean(),
     notes: z.string().optional(),
+    // Só segunda a sexta: refeição de dia de trabalho não entra no fim de semana.
+    weekdays_only: z.boolean(),
   })
   .refine((d) => d.end_date >= d.start_date, {
     message: 'A data final deve ser igual ou posterior à inicial',
@@ -27,7 +29,7 @@ export const multiDaySchema = z
       ctx.addIssue({
         path: ['start_date'],
         code: z.ZodIssueCode.custom,
-        message: `Só dá para lançar despesas de até ${MAX_EXPENSE_AGE_DAYS} dias atrás`,
+        message: `Só dá para lançar despesas a partir de ${minExpenseDate().toLocaleDateString('pt-BR')}`,
       });
     }
     if (d.end_date > endOfToday()) {
@@ -45,3 +47,37 @@ export const multiDaySchema = z
       });
     }
   });
+
+const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
+
+/**
+ * Períodos contínuos a lançar entre `start` e `end` (inclusive). Com `weekdaysOnly`,
+ * quebra em blocos de segunda a sexta, pulando sábado e domingo; sem, é um bloco só.
+ */
+export function multiDayRanges(start: Date, end: Date, weekdaysOnly: boolean): Array<{ start: Date; end: Date }> {
+  if (end < start) return [];
+  if (!weekdaysOnly) return [{ start, end }];
+  const ranges: Array<{ start: Date; end: Date }> = [];
+  let open: Date | null = null;
+  let last: Date | null = null;
+  for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    if (isWeekend(d)) {
+      if (open && last) ranges.push({ start: open, end: last });
+      open = null;
+      continue;
+    }
+    open ??= d;
+    last = d;
+  }
+  if (open && last) ranges.push({ start: open, end: last });
+  return ranges;
+}
+
+/** Quantos dias o lançamento cria (um por dia dos períodos). */
+export function multiDayCount(start: Date | undefined, end: Date | undefined, weekdaysOnly: boolean): number {
+  if (!start || !end) return 0;
+  return multiDayRanges(start, end, weekdaysOnly).reduce(
+    (n, r) => n + Math.round((r.end.getTime() - r.start.getTime()) / 86_400_000) + 1,
+    0,
+  );
+}

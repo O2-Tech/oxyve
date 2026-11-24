@@ -924,7 +924,7 @@ export function QuickExpenseSheet({
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
-                          disabled={(d) => d > endOfToday() || d < minExpenseDate()}
+                          disabled={(d) => d > endOfToday() || d < minExpenseDate(policy?.cycle_cutoff_day)}
                           initialFocus
                           className="pointer-events-auto"
                         />

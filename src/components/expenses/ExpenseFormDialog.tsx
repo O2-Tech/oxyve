@@ -412,7 +412,7 @@ export function ExpenseFormDialog({
     if (r.extracted_date) {
       const d = parseISO(r.extracted_date);
       const current = form.getValues('date');
-      if (d <= endOfToday() && d >= minExpenseDate()) {
+      if (d <= endOfToday() && d >= minExpenseDate(cycleCutoffDay)) {
         if (!current || format(current, 'yyyy-MM-dd') !== r.extracted_date) {
           form.setValue('date', d, { shouldValidate: true });
           filled.push('data');
@@ -642,7 +642,7 @@ export function ExpenseFormDialog({
                       mode="single"
                       selected={field.value}
                       onSelect={field.onChange}
-                      disabled={(date) => date > endOfToday() || date < minExpenseDate()}
+                      disabled={(date) => date > endOfToday() || date < minExpenseDate(cycleCutoffDay)}
                       initialFocus
                       className="pointer-events-auto"
                     />
