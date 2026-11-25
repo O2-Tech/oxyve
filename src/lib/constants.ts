@@ -97,6 +97,14 @@ export const endOfToday = (): Date => {
   d.setHours(23, 59, 59, 999);
   return d;
 };
+// Relatório do ciclo anterior ainda não enviado (rascunho, devolvido ou inexistente):
+// o ciclo anterior inteiro entra (banco: expense_min_date_for). Quem atualiza é o
+// useExpenseWindowSync, no AppShell; até carregar, vale a regra sem ele.
+let previousCycleOpen = false;
+export const setPreviousCycleOpen = (open: boolean) => {
+  previousCycleOpen = open;
+};
+
 export const minExpenseDate = (cutoffDay: number = 25): Date => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -106,7 +114,10 @@ export const minExpenseDate = (cutoffDay: number = 25): Date => {
     today.getDate() >= cutoffDay
       ? new Date(today.getFullYear(), today.getMonth(), cutoffDay)
       : new Date(today.getFullYear(), today.getMonth() - 1, cutoffDay);
-  return cycleStart < twentyDaysAgo ? cycleStart : twentyDaysAgo;
+  const base = cycleStart < twentyDaysAgo ? cycleStart : twentyDaysAgo;
+  if (!previousCycleOpen) return base;
+  const previousStart = new Date(cycleStart.getFullYear(), cycleStart.getMonth() - 1, cutoffDay);
+  return previousStart < base ? previousStart : base;
 };
 
 /** Normaliza o que foi digitado no campo Valor para "1.234,56" ao sair do campo. */

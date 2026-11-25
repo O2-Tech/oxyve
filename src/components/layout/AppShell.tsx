@@ -9,6 +9,7 @@ import { OfflineBanner } from '@/components/pwa/OfflineBanner';
 import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { useDashboardContext } from '@/hooks/useCurrentReport';
 import { cn } from '@/lib/utils';
+import { useExpenseWindowSync } from '@/hooks/useExpenseWindowSync';
 
 interface AppShellProps {
   children: ReactNode;
@@ -67,6 +68,8 @@ function CycleRibbon() {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  // Janela de lançamento igual à do banco (ciclo anterior aberto) para os calendários.
+  useExpenseWindowSync();
   const isMobile = useIsMobile();
 
   return (
