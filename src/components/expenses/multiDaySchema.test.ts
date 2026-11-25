@@ -33,8 +33,8 @@ describe('multiDaySchema', () => {
   });
 
   it('recusa início além da janela de lançamento', () => {
-    // 60 dias: sempre antes da janela (início do ciclo, no máximo ~31 dias, ou 20 dias).
-    const r = multiDaySchema.safeParse({ ...base(), start_date: daysAgo(60) });
+    // 90 dias: sempre antes da janela (início do ciclo anterior, no máximo ~62 dias, ou 60 dias).
+    const r = multiDaySchema.safeParse({ ...base(), start_date: daysAgo(90) });
     expect(r.success).toBe(false);
     expect(JSON.stringify(r.error?.issues)).toMatch(/a partir de/);
   });

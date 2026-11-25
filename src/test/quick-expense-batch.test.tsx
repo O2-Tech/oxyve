@@ -217,8 +217,8 @@ describe('QuickExpenseSheet — lote da galeria', () => {
     expect(screen.getByText('Revisar despesa · nota 1 de 20')).toBeInTheDocument();
   });
 
-  it('nota de mais de 20 dias: a revisão mostra que entra com hoje e por quê', async () => {
-    const old = format(subDays(new Date(), 40), 'yyyy-MM-dd');
+  it('nota antes da janela: a revisão mostra que entra com hoje e por quê', async () => {
+    const old = format(subDays(new Date(), 90), 'yyyy-MM-dd');
     invoke.mockResolvedValue({ data: { ...reliable, extracted_date: old }, error: null });
     render(<QuickExpenseSheet open onOpenChange={() => {}} />, { wrapper });
     await pickFromGallery([nota('a.jpg')]);

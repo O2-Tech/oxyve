@@ -22,7 +22,7 @@ export function receiptDateWarning(receiptDate: string): string {
   return `A data da nota (${formatDate(receiptDate)}) é diferente da data da despesa. O gestor verá esse aviso.`;
 }
 
-/** Data da nota (YYYY-MM-DD) dentro da janela de lançamento (hoje até o início do ciclo ou 20 dias atrás). */
+/** Data da nota (YYYY-MM-DD) dentro da janela de lançamento (hoje até o início do ciclo ou 60 dias atrás). */
 export function receiptDateInWindow(receiptDate: string): boolean {
   const d = parseDateOnly(receiptDate);
   return d <= endOfToday() && d >= minExpenseDate();
