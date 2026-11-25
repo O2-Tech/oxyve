@@ -41,12 +41,12 @@ export function QuickExpenseFab() {
         type="button"
         size="sm"
         onClick={() => setOpen(true)}
-        aria-label="Nova despesa por foto"
-        title="Nova despesa por foto"
+        aria-label="Enviar fotos das notas"
+        title="Enviar fotos das notas: cada foto vira uma despesa"
         className="hidden h-9 gap-2 lg:inline-flex"
       >
         <Camera className="h-4 w-4" aria-hidden="true" />
-        Capturar
+        Enviar notas
       </Button>
       <QuickExpenseSheet open={open} onOpenChange={setOpen} />
     </>

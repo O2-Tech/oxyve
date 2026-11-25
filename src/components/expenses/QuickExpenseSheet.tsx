@@ -92,7 +92,13 @@ export interface QuickExpenseSheetProps {
   onCreated?: () => void;
   /** Permite override do step inicial nos testes. */
   initialStep?: QuickExpenseStep;
+  /** Fotos já escolhidas (ex.: arrastadas para a tela Despesas): abre direto no lote. */
+  initialFiles?: File[];
 }
+
+/** Só imagens entram no lote (arrastar pode trazer PDF, planilha...). */
+export const imageFiles = (files: File[]) =>
+  files.filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
 
 const formSchema = z.object({
   date: z.date({ required_error: 'Selecione uma data' }),
@@ -120,6 +126,7 @@ export function QuickExpenseSheet({
   onOpenChange,
   onCreated,
   initialStep = 'capture',
+  initialFiles,
 }: QuickExpenseSheetProps) {
   const isMobile = useIsMobile();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +137,7 @@ export function QuickExpenseSheet({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   // Lote: notas que faltam (a atual não entra), total escolhido e quantas foram lançadas.
   const [queue, setQueue] = useState<File[]>([]);
   const [batchTotal, setBatchTotal] = useState(0);
@@ -281,6 +289,37 @@ export function QuickExpenseSheet({
     setBatchTotal(files.length);
     setSavedCount(0);
     await startFrom(files);
+  };
+
+  // Fotos que já chegaram escolhidas (arrastar e soltar na tela Despesas).
+  const startedWithFilesRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      startedWithFilesRef.current = false;
+      return;
+    }
+    if (startedWithFilesRef.current || !initialFiles?.length) return;
+    startedWithFilesRef.current = true;
+    void handleGalleryFiles(initialFiles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFiles]);
+
+  const dropHandlers = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+    },
+    onDragLeave: () => setIsDragging(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = imageFiles(Array.from(e.dataTransfer.files ?? []));
+      if (files.length === 0) {
+        toast.error('Solte fotos das notas (JPG, PNG ou HEIC).');
+        return;
+      }
+      void handleGalleryFiles(files);
+    },
   };
 
   /** Abre a primeira nota que der para ler; as que não abrem são puladas com aviso. */
@@ -641,8 +680,14 @@ export function QuickExpenseSheet({
       {step === 'capture' && (
         <div
           // Celular: compacto para os três botões caberem sem rolar.
-          className="flex flex-col items-center justify-center py-4 sm:py-12 gap-3 sm:gap-4"
+          // Computador: a área inteira aceita fotos arrastadas.
+          className={cn(
+            'flex flex-col items-center justify-center py-4 sm:py-12 gap-3 sm:gap-4 rounded-lg',
+            !isMobile && 'border-2 border-dashed border-transparent',
+            isDragging && 'border-primary bg-primary/5',
+          )}
           data-testid="step-capture"
+          {...(isMobile ? {} : dropHandlers)}
         >
           {isConverting ? (
             <>
@@ -653,7 +698,9 @@ export function QuickExpenseSheet({
             <>
               <Camera className="h-8 w-8 sm:h-12 sm:w-12 text-muted-foreground" />
               <p className="text-sm text-muted-foreground text-center max-w-xs">
-                Fotografe a nota agora ou escolha fotos que você já tem. Dá para escolher várias notas de uma vez.
+                {isMobile
+                  ? 'Fotografe a nota agora ou escolha fotos que você já tem. Dá para escolher várias notas de uma vez.'
+                  : 'Arraste as fotos das notas para cá ou selecione do computador. Cada foto vira uma despesa, várias de uma vez.'}
               </p>
               <div className="flex w-full max-w-xs flex-col gap-2">
                 {isMobile && (

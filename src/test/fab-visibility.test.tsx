@@ -53,31 +53,31 @@ describe('QuickExpenseFab — visibility', () => {
 
   it('aparece em /app/dashboard', () => {
     renderAt('/app/dashboard');
-    expect(screen.getByLabelText(/nova despesa por foto/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/enviar fotos das notas/i)).toBeInTheDocument();
   });
 
   it('aparece em /app/expenses', () => {
     renderAt('/app/expenses');
-    expect(screen.getByLabelText(/nova despesa por foto/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/enviar fotos das notas/i)).toBeInTheDocument();
   });
 
   it('aparece em /app/reports', () => {
     renderAt('/app/reports');
-    expect(screen.getByLabelText(/nova despesa por foto/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/enviar fotos das notas/i)).toBeInTheDocument();
   });
 
   it('some em /app/settings/profile', () => {
     renderAt('/app/settings/profile');
-    expect(screen.queryByLabelText(/nova despesa por foto/i)).toBeNull();
+    expect(screen.queryByLabelText(/enviar fotos das notas/i)).toBeNull();
   });
 
   it('some em /app/settings/team', () => {
     renderAt('/app/settings/team');
-    expect(screen.queryByLabelText(/nova despesa por foto/i)).toBeNull();
+    expect(screen.queryByLabelText(/enviar fotos das notas/i)).toBeNull();
   });
 
   it('some em rotas fora de /app/dashboard|expenses|reports', () => {
     renderAt('/login');
-    expect(screen.queryByLabelText(/nova despesa por foto/i)).toBeNull();
+    expect(screen.queryByLabelText(/enviar fotos das notas/i)).toBeNull();
   });
 });

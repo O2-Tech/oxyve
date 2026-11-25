@@ -14,6 +14,7 @@ const addToReportProps = vi.hoisted(() => vi.fn());
 const formProps = vi.hoisted(() => vi.fn());
 const receiptProps = vi.hoisted(() => vi.fn());
 const deleteMany = vi.hoisted(() => vi.fn());
+const photoSheetProps = vi.hoisted(() => vi.fn());
 
 const expense = (over: Partial<Expense>): Expense =>
   ({
@@ -59,6 +60,13 @@ vi.mock('@/hooks/useExpenses', () => ({
 }));
 vi.mock('@/components/expenses/ExpenseFiltersPopover', () => ({ ExpenseFiltersPopover: () => null }));
 vi.mock('@/components/expenses/MultiDayExpenseDialog', () => ({ MultiDayExpenseDialog: () => null }));
+vi.mock('@/components/expenses/QuickExpenseSheet', () => ({
+  QuickExpenseSheet: (p: { open: boolean; initialFiles?: File[] }) => {
+    photoSheetProps(p);
+    return p.open ? <div data-testid="photo-sheet-open" /> : null;
+  },
+  imageFiles: (files: File[]) => files.filter((f) => f.type.startsWith('image/')),
+}));
 vi.mock('@/components/expenses/ExpenseFormDialog', () => ({
   ExpenseFormDialog: (p: { open: boolean }) => {
     formProps(p);
@@ -158,10 +166,11 @@ describe('Despesas', () => {
     expect(lastAddProps().expense?.id).toBe('m3');
   });
 
-  it('celular mostra "Nova despesa" e "Vários dias"', () => {
+  it('celular mostra "Enviar fotos das notas", "Sem foto" e "Vários dias"', () => {
     isMobile.value = true;
     renderPage();
-    expect(screen.getByText('Nova despesa')).toBeInTheDocument();
+    expect(screen.getByTestId('send-photos-btn-mobile')).toHaveTextContent('Enviar fotos das notas');
+    expect(screen.getAllByText('Sem foto').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Vários dias').length).toBeGreaterThan(0);
   });
 
@@ -187,5 +196,23 @@ describe('Despesas', () => {
     expect(screen.getByText('Desmarcar todas')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Desmarcar todas'));
     expect(screen.queryByText(/Excluir \(/)).toBeNull();
+  });
+
+  it('"Enviar fotos das notas" abre o envio por foto', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('send-photos-btn'));
+    expect(screen.getByTestId('photo-sheet-open')).toBeInTheDocument();
+  });
+
+  it('computador: soltar fotos na tela abre o lote com elas (o que não é imagem fica de fora)', () => {
+    renderPage();
+    const foto = new File(['a'], 'nota.jpg', { type: 'image/jpeg' });
+    const pdf = new File(['b'], 'boleto.pdf', { type: 'application/pdf' });
+    const area = screen.getByText(/Despesas da empresa/).closest('div.relative') as HTMLElement;
+    fireEvent.dragOver(area, { dataTransfer: { types: ['Files'], files: [foto, pdf] } });
+    expect(screen.getByTestId('page-drop-overlay')).toBeInTheDocument();
+    fireEvent.drop(area, { dataTransfer: { types: ['Files'], files: [foto, pdf] } });
+    expect(screen.getByTestId('photo-sheet-open')).toBeInTheDocument();
+    expect(photoSheetProps.mock.calls.at(-1)?.[0]).toMatchObject({ open: true, initialFiles: [foto] });
   });
 });

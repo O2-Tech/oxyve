@@ -34,8 +34,9 @@ import {
   ArrowLeft, Send, CheckCircle2, XCircle, Trash2, Receipt, Wallet,
   MessageSquare, Clock, AlertTriangle, Loader2, Paperclip,
   ListChecks, ThumbsUp, ThumbsDown, MoreHorizontal, Download, FileSpreadsheet, FileText, History,
-  Undo2, Info, Copy, CalendarX, Plus,
+  Undo2, Info, Copy, CalendarX, Plus, Images,
 } from 'lucide-react';
+import { QuickExpenseSheet } from '@/components/expenses/QuickExpenseSheet';
 import { AddExpensesToReportDialog } from '@/components/reports/AddExpensesToReportDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -160,6 +161,7 @@ export default function ReportDetail() {
   const [comment, setComment] = useState('');
   const [removeTarget, setRemoveTarget] = useState<ReportExpense | null>(null);
   const [isAddExpensesOpen, setIsAddExpensesOpen] = useState(false);
+  const [isPhotosOpen, setIsPhotosOpen] = useState(false);
   const [receiptTarget, setReceiptTarget] = useState<{ path: string; title: string } | null>(null);
 
   // Individual expense rejection dialog
@@ -550,6 +552,19 @@ export default function ReportDetail() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setIsPhotosOpen(true)}
+              disabled={busy}
+              className={cn('gap-2', actionSize)}
+              data-testid="report-send-photos-btn"
+            >
+              <Images className="h-4 w-4" />
+              <span className="hidden sm:inline">Enviar fotos das notas</span>
+              <span className="sm:hidden">Fotos</span>
+            </Button>
+          )}
           {canEdit && (
             <Button
               variant="outline"
@@ -1051,6 +1066,8 @@ export default function ReportDetail() {
       />
 
       {/* Remover item — só desvincula; a despesa segue existindo. */}
+      {canEdit && <QuickExpenseSheet open={isPhotosOpen} onOpenChange={setIsPhotosOpen} />}
+
       {canEdit && id && (
         <AddExpensesToReportDialog
           reportId={id}
