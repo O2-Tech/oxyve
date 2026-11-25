@@ -32,10 +32,12 @@ describe('receiptPolicyBlocks', () => {
   it('data divergente não bloqueia', () => {
     expect(receiptPolicyBlocks({ ...base, extracted_date: ymd(subDays(new Date(), 3)) })).toEqual([]);
   });
-  it('PIX, cartão sem NF e sem CNPJ seguem bloqueando', () => {
+  it('PIX e cartão sem NF seguem bloqueando', () => {
     expect(receiptPolicyBlocks({ ...base, receipt_type: 'comprovante_pix' })[0]).toMatch(/PIX/);
     expect(receiptPolicyBlocks({ ...base, receipt_type: 'comprovante_cartao' })[0]).toMatch(/cartão/);
-    expect(receiptPolicyBlocks({ ...base, receipt_type: 'recibo', extracted_cnpj: null })[0]).toMatch(/CNPJ/);
+  });
+  it('sem CNPJ lido não bloqueia mais (a leitura pode não enxergar o CNPJ da foto)', () => {
+    expect(receiptPolicyBlocks({ ...base, receipt_type: 'recibo', extracted_cnpj: null })).toEqual([]);
   });
 });
 

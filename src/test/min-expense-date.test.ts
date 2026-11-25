@@ -3,12 +3,15 @@
  * início do ciclo atual e 20 dias atrás.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { minExpenseDate } from '@/lib/constants';
+import { minExpenseDate, setPreviousCycleOpen } from '@/lib/constants';
 
 const dia = (d: Date) => `${d.getDate()}/${d.getMonth() + 1}`;
 
 describe('minExpenseDate', () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    setPreviousCycleOpen(false);
+  });
 
   it('fim do ciclo: libera o ciclo inteiro (24/11 → desde 25/10)', () => {
     vi.useFakeTimers();
@@ -26,5 +29,13 @@ describe('minExpenseDate', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 24, 12));
     expect(dia(minExpenseDate(10))).toBe('4/11');
+  });
+
+  it('relatório anterior aberto (ex.: devolvido): libera o ciclo anterior inteiro (25/11 → desde 25/10)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 25, 12));
+    expect(dia(minExpenseDate())).toBe('5/11');
+    setPreviousCycleOpen(true);
+    expect(dia(minExpenseDate())).toBe('25/10');
   });
 });

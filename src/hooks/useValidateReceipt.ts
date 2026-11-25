@@ -123,9 +123,8 @@ export function receiptPolicyBlocks(result: ValidationResult | null): string[] {
   if (result.receipt_type === 'comprovante_cartao') {
     blocks.push('Comprovante de cartão sem nota fiscal não é aceito (Política 4.9.3).');
   }
-  if (!result.extracted_cnpj && result.receipt_type !== 'nota_fiscal') {
-    blocks.push('O comprovante não tem CNPJ. É necessária nota fiscal com CNPJ (Política 4.9.3).');
-  }
+  // Sem CNPJ não bloqueia mais (25/11/2026): a leitura deixa passar CNPJ que está na
+  // foto e travava nota válida. O gestor confere o comprovante na aprovação.
   return blocks;
 }
 
