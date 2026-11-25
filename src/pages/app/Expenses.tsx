@@ -27,7 +27,8 @@ import {
   Expense,
   ExpenseTab,
 } from '@/hooks/useExpenses';
-import { Plus, Search, Receipt, CalendarIcon, Trash2, FileText, Filter, CalendarDays } from 'lucide-react';
+import { Plus, Search, Receipt, CalendarIcon, Trash2, FileText, Filter, CalendarDays, Images } from 'lucide-react';
+import { QuickExpenseSheet, imageFiles } from '@/components/expenses/QuickExpenseSheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,14 @@ export default function Expenses() {
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({});
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isMultiDayOpen, setIsMultiDayOpen] = useState(false);
+  // Fotos das notas: o caminho principal (cada foto vira uma despesa, com comprovante).
+  const [isPhotosOpen, setIsPhotosOpen] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[] | undefined>(undefined);
+  const [isDraggingPage, setIsDraggingPage] = useState(false);
+  const openPhotos = (files?: File[]) => {
+    setDroppedFiles(files);
+    setIsPhotosOpen(true);
+  };
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isAddToReportOpen, setIsAddToReportOpen] = useState(false);
@@ -214,6 +223,33 @@ export default function Expenses() {
 
   return (
     <AppShell>
+      {/* Computador: soltar fotos em qualquer lugar da tela abre o lote. */}
+      <div
+        className="relative"
+        onDragOver={(e) => {
+          if (isMobile || isPhotosOpen || !e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          setIsDraggingPage(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setIsDraggingPage(false);
+        }}
+        onDrop={(e) => {
+          if (isMobile || isPhotosOpen) return;
+          e.preventDefault();
+          setIsDraggingPage(false);
+          const files = imageFiles(Array.from(e.dataTransfer.files ?? []));
+          if (files.length > 0) openPhotos(files);
+        }}
+      >
+      {isDraggingPage && (
+        <div
+          className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/80"
+          data-testid="page-drop-overlay"
+        >
+          <p className="text-lg font-medium">Solte as fotos das notas: cada uma vira uma despesa</p>
+        </div>
+      )}
       <PageHeader
         title={isManager ? 'Despesas da empresa' : 'Despesas'}
         description={isManager ? 'Todas as despesas da O2, com o nome de quem lançou' : 'Gerencie suas despesas e comprovantes'}
@@ -247,9 +283,13 @@ export default function Expenses() {
               <CalendarDays className="h-4 w-4" />
               Vários dias
             </Button>
-            <Button onClick={openNewExpense} className="gap-2">
+            <Button variant="outline" onClick={openNewExpense} className="gap-2">
               <Plus className="h-4 w-4" />
-              Nova Despesa
+              Sem foto
+            </Button>
+            <Button onClick={() => openPhotos()} className="gap-2" data-testid="send-photos-btn">
+              <Images className="h-4 w-4" />
+              Enviar fotos das notas
             </Button>
           </div>
         }
@@ -257,10 +297,14 @@ export default function Expenses() {
 
       {/* Celular (<768px, onde o header esconde os botões): lançamento manual e vários
           dias. A captura por foto continua no botão central da barra inferior. */}
+      <Button onClick={() => openPhotos()} className="mb-2 h-12 w-full gap-2 md:hidden" data-testid="send-photos-btn-mobile">
+        <Images className="h-5 w-5" />
+        Enviar fotos das notas
+      </Button>
       <div className="mb-4 flex gap-2 md:hidden">
         <Button variant="outline" size="sm" onClick={openNewExpense} className="h-11 flex-1 gap-1">
           <Plus className="h-4 w-4" />
-          Nova despesa
+          Sem foto
         </Button>
         <Button variant="outline" size="sm" onClick={() => setIsMultiDayOpen(true)} className="h-11 flex-1 gap-1">
           <CalendarDays className="h-4 w-4" />
@@ -507,6 +551,19 @@ export default function Expenses() {
       <MultiDayExpenseDialog
         open={isMultiDayOpen}
         onOpenChange={setIsMultiDayOpen}
+        onPreferPhotos={() => {
+          setIsMultiDayOpen(false);
+          openPhotos();
+        }}
+      />
+
+      <QuickExpenseSheet
+        open={isPhotosOpen}
+        onOpenChange={(o) => {
+          setIsPhotosOpen(o);
+          if (!o) setDroppedFiles(undefined);
+        }}
+        initialFiles={droppedFiles}
       />
 
       <AddToReportDialog
@@ -552,6 +609,7 @@ export default function Expenses() {
         onConfirm={confirmBulkDelete}
         isLoading={deleteExpenses.isPending}
       />
+      </div>
     </AppShell>
   );
 }

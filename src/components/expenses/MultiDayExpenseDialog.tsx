@@ -58,6 +58,8 @@ interface MultiDayExpenseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
+  /** "Tenho as notas": troca para o envio de fotos (cada foto vira uma despesa com comprovante). */
+  onPreferPhotos?: () => void;
 }
 
 
@@ -67,6 +69,7 @@ export function MultiDayExpenseDialog({
   open,
   onOpenChange,
   onCreated,
+  onPreferPhotos,
 }: MultiDayExpenseDialogProps) {
   const { data: categories = [] } = useActiveExpenseTypes();
   const createMultiday = useCreateExpenseMultiday();
@@ -152,9 +155,18 @@ export function MultiDayExpenseDialog({
             Lançar vários dias
           </DialogTitle>
           <DialogDescription>
-            Gera uma despesa por dia no período. Cada dia respeita o limite diário.
+            Gera uma despesa por dia no período, sem foto. Cada dia respeita o limite diário.
           </DialogDescription>
         </DialogHeader>
+
+        {onPreferPhotos && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm" data-testid="prefer-photos-hint">
+            <span>Tem as notas? Envie as fotos: cada uma vira uma despesa já com o comprovante.</span>
+            <Button type="button" size="sm" variant="outline" className="h-10 shrink-0" onClick={onPreferPhotos}>
+              Enviar fotos
+            </Button>
+          </div>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">

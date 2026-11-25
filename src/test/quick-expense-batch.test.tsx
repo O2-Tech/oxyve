@@ -225,4 +225,17 @@ describe('QuickExpenseSheet — lote da galeria', () => {
     expect(screen.getByText(`Hoje · nota de ${old.slice(8, 10)}/${old.slice(5, 7)}`)).toBeInTheDocument();
     expect(screen.getByTestId('receipt-date-notice')).toHaveTextContent(/o gestor vê a data da nota e decide se aprova/);
   });
+
+  it('fotos já escolhidas (arrastadas na tela Despesas) abrem direto no lote', async () => {
+    render(<QuickExpenseSheet open onOpenChange={() => {}} initialFiles={[nota('a.jpg'), nota('b.jpg')]} />, { wrapper });
+    await waitFor(() => expect(screen.getByText('Revisar despesa · nota 1 de 2')).toBeInTheDocument());
+  });
+
+  it('computador: soltar fotos na área de captura começa o lote', async () => {
+    render(<QuickExpenseSheet open onOpenChange={() => {}} />, { wrapper });
+    await act(async () => {
+      fireEvent.drop(screen.getByTestId('step-capture'), { dataTransfer: { files: [nota('a.jpg'), nota('b.jpg'), nota('c.jpg')] } });
+    });
+    await waitFor(() => expect(screen.getByText('Revisar despesa · nota 1 de 3')).toBeInTheDocument());
+  });
 });
