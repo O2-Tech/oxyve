@@ -52,7 +52,7 @@ describe('receiptDateNotice', () => {
     );
   });
   it('nota antes da janela de lançamento: despesa fica com hoje', () => {
-    const d = ymd(subDays(new Date(), 60));
+    const d = ymd(subDays(new Date(), 90));
     expect(receiptDateNotice({ ...base, extracted_date: d }, today)).toBe(
       `Essa nota é de ${br(d)}, antes de ${br(ymd(minExpenseDate()))}, a data mais antiga que ainda dá para lançar. Ela entra com a data de hoje e o gestor vê a data da nota e decide se aprova.`,
     );

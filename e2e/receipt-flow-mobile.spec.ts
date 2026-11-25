@@ -79,7 +79,7 @@ test.describe('celular', () => {
   });
 
   test('nota antiga: a revisão diz que entra com hoje e que o gestor decide', async ({ page }) => {
-    const antiga = format(subDays(new Date(), 40), 'yyyy-MM-dd');
+    const antiga = format(subDays(new Date(), 90), 'yyyy-MM-dd');
     await mockSupabase(page, { functions: () => reading(antiga, 4200, 'Restaurante Bom Prato') });
     const foto = await receiptPhoto(page, 'Antiga');
 

@@ -88,10 +88,10 @@ export const amountFieldError = (input: string): string | null => {
 };
 
 // Janela de lançamento (regra do banco: expense_min_date, usada em tg_expenses_regras).
-// Vale o mais antigo entre o início do ciclo atual e 20 dias atrás: o ciclo inteiro
+// Vale o mais antigo entre o início do ciclo atual e 60 dias atrás: o ciclo inteiro
 // sempre entra e, no começo de um ciclo novo, ainda dá para lançar o fim do anterior.
 // Datas em meia-noite local.
-export const MAX_EXPENSE_AGE_DAYS = 20;
+export const MAX_EXPENSE_AGE_DAYS = 60;
 export const endOfToday = (): Date => {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
