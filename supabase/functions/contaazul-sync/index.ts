@@ -41,7 +41,8 @@ async function rodarOrg(sb: SupabaseClient, cred: Credenciais, org: OrgConexao, 
     api: apiDaOrg(sb, org.org_id, cred),
     store: criarSyncStore(sb),
     appUrl: APP_URL,
-    buscarCpf: (email: string | null, nome: string | null) => buscarCpfNoPipefy(email, nome),
+    buscarCpf: (email: string | null, nome: string | null) =>
+      buscarCpfNoPipefy(email, nome, { token: Deno.env.get("PIPEFY_TOKEN"), tabela: Deno.env.get("PIPEFY_PESSOAS_TABLE") }),
     log: (msg: string, extra?: Record<string, unknown>) => console.log(JSON.stringify({ fn: "contaazul-sync", msg, ...extra })),
   };
   let erroGeral: string | null = null;
