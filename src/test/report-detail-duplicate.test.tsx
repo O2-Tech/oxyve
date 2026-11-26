@@ -41,6 +41,12 @@ const report = {
         duplicate_of: { id: 'e1', date: '2026-10-05', description: 'Almoço' },
       },
     },
+    {
+      id: 'i3',
+      review_decision: 'approved',
+      review_comment: null,
+      expense: { id: 'e3', date: '2026-10-01', description: 'Café da estação', amount_cents: 1000, is_reimbursable: true, currency: 'BRL' },
+    },
   ],
 };
 
@@ -124,6 +130,14 @@ describe('ReportDetail — possível duplicidade', () => {
     expect(screen.getByTestId('possible-duplicate-summary')).toHaveTextContent(
       '1 despesa com possível duplicidade — confira antes de aprovar.',
     );
+  });
+
+  it('itens em ordem de data: notas do mesmo dia ficam juntas', async () => {
+    const { container } = renderDetail();
+    await screen.findAllByTestId('possible-duplicate-badge');
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Café da estação')).toBeLessThan(text.indexOf('Almoço'));
+    expect(text.indexOf('Almoço')).toBeLessThan(text.indexOf('Almoço de novo'));
   });
 
   it('não bloqueia: Aprovar liberado e o diálogo repete o aviso', async () => {

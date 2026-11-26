@@ -226,7 +226,9 @@ export default function ReportDetail() {
           receiptDateHint:
             e.receipt_date && receiptDateDiffers(e.receipt_date, e.date) ? receiptDateHint(e.receipt_date, e.date) : null,
         };
-      }),
+      })
+        // Em ordem de data: notas do mesmo dia ficam juntas (teto diário, duplicidade).
+        .sort((a, b) => (a.e.date ?? '').localeCompare(b.e.date ?? '')),
     [items, rules]
   );
 
