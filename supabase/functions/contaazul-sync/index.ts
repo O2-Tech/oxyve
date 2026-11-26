@@ -28,6 +28,7 @@ import { parseCategorias, parseCentrosCusto, parseContasFinanceiras } from "../_
 import { criarSyncStore } from "../_shared/contaazul/store_supabase.ts";
 import { sincronizarOrg } from "../_shared/contaazul/sync.ts";
 import type { Credenciais } from "../_shared/contaazul/oauth.ts";
+import { buscarCpfNoPipefy } from "../_shared/pipefy.ts";
 
 interface OrgConexao {
   org_id: string;
@@ -40,6 +41,7 @@ async function rodarOrg(sb: SupabaseClient, cred: Credenciais, org: OrgConexao, 
     api: apiDaOrg(sb, org.org_id, cred),
     store: criarSyncStore(sb),
     appUrl: APP_URL,
+    buscarCpf: (email: string | null, nome: string | null) => buscarCpfNoPipefy(email, nome),
     log: (msg: string, extra?: Record<string, unknown>) => console.log(JSON.stringify({ fn: "contaazul-sync", msg, ...extra })),
   };
   let erroGeral: string | null = null;

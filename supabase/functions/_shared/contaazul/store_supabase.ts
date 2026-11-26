@@ -91,6 +91,10 @@ export function criarSyncStore(sb: SupabaseClient): SyncStore {
       const { error } = await sb.from("profiles").update({ ca_pessoa_id: pessoaId }).eq("id", userId);
       if (error) falha("salvar a pessoa do Conta Azul", error);
     },
+    async salvarCpf(userId, cpf) {
+      const { error } = await sb.from("profiles").update({ cpf_cnpj: cpf }).eq("id", userId).or("cpf_cnpj.is.null,cpf_cnpj.eq.");
+      if (error) falha("salvar o CPF do funcionário", error);
+    },
     salvarVencimento: (id, vencimento) => upd("salvar o vencimento", id, { ca_vencimento: vencimento }),
     marcarEnviado: (id, r) =>
       upd("marcar enviado", id, {

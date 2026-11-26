@@ -72,6 +72,8 @@ export interface SyncStore {
   reservarPendentes(orgId: string, limite: number): Promise<string[]>;
   dadosRelatorio(reportId: string): Promise<ReportData | null>;
   salvarPessoa(userId: string, pessoaId: string): Promise<void>;
+  /** CPF achado fora (Pipefy) vai para o perfil; só grava se o perfil estiver sem documento. */
+  salvarCpf?(userId: string, cpf: string): Promise<void>;
   /** Grava o vencimento calculado antes de criar (o retry procura por ele). */
   salvarVencimento(reportId: string, vencimento: string): Promise<void>;
   marcarEnviado(reportId: string, r: { contaId: string | null; parcelaId: string; vencimento: string | null }): Promise<void>;
@@ -96,6 +98,8 @@ export interface SyncCtx {
   store: SyncStore;
   appUrl?: string;
   agora?: () => Date;
+  /** Perfil sem CPF: procura fora (Pipefy) antes de desistir. */
+  buscarCpf?: (email: string | null, nome: string | null) => Promise<string | null>;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -107,8 +111,12 @@ const hoje = (ctx: SyncCtx) => dataSaoPaulo((ctx.agora ?? (() => new Date()))())
 /** Pessoa do funcionário no Conta Azul: a salva, a achada pelo CPF ou uma nova. */
 export async function garantirPessoa(ctx: SyncCtx, emp: NonNullable<ReportData["employee"]>): Promise<string> {
   if (emp.ca_pessoa_id) return emp.ca_pessoa_id;
-  const cpf = cpfDoPerfil(emp.cpf_cnpj);
-  if (!cpf) throw new ErroDefinitivo("Funcionário sem CPF no perfil.");
+  let cpf = cpfDoPerfil(emp.cpf_cnpj);
+  if (!cpf && ctx.buscarCpf) {
+    cpf = cpfDoPerfil(await ctx.buscarCpf(emp.email, emp.full_name).catch(() => null));
+    if (cpf && !emp.cpf_cnpj) await ctx.store.salvarCpf?.(emp.id, cpf);
+  }
+  if (!cpf) throw new ErroDefinitivo("Funcionário sem CPF no perfil (nem na base Pessoas do Pipefy).");
 
   const comCpf = (body: unknown) => parseListaPessoas(body).filter((p) => p.documento === cpf);
   const fornecedor = comCpf(await ctx.api.buscarPessoas(cpf, "Fornecedor")).sort((a, b) => Number(b.ativo) - Number(a.ativo));

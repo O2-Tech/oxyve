@@ -2,7 +2,7 @@
  * Conta Azul — regras do sync (envio idempotente, pessoa, baixa, quitação) e
  * renovação do token com trava, com fetch e banco falsos.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ContaAzulApi } from '../../supabase/functions/_shared/contaazul/api.ts';
 import {
   conferirQuitacao,
@@ -236,8 +236,21 @@ describe('envio do relatório', () => {
     const { store, est } = storeFalso(d);
     const f = fetchFalso({});
     expect(await enviarRelatorio({ api: api(f.fn), store, agora }, 'r1')).toBe('erro');
-    expect(est).toMatchObject({ ca_status: 'erro', ca_error: 'Funcionário sem CPF no perfil.' });
+    expect(est).toMatchObject({ ca_status: 'erro', ca_error: 'Funcionário sem CPF no perfil (nem na base Pessoas do Pipefy).' });
     expect(f.chamadas).toHaveLength(0);
+  });
+
+  it('sem CPF no perfil: acha no Pipefy, grava no perfil e segue', async () => {
+    d = dados({}, { cpf_cnpj: null });
+    const { store } = storeFalso(d);
+    const salvos: string[] = [];
+    store.salvarCpf = async (_u, c) => { salvos.push(c); };
+    const f = fetchFalso({});
+    const buscarCpf = vi.fn().mockResolvedValue('123.456.789-09');
+    await enviarRelatorio({ api: api(f.fn), store, agora, buscarCpf }, 'r1');
+    expect(buscarCpf).toHaveBeenCalledWith('bia@o2inc.com.br', 'Bia Souza');
+    expect(salvos).toEqual(['12345678909']);
+    expect(f.chamadas.length).toBeGreaterThan(0);
   });
 
   it('categoria sem de-para: erro antes de cadastrar a pessoa', async () => {
