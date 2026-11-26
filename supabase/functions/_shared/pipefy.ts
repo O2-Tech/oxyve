@@ -32,7 +32,7 @@ export function cpfDosRegistros(registros: Registro[], email: string | null, nom
 export async function buscarCpfNoPipefy(
   email: string | null,
   nome: string | null,
-  env: { token?: string; tabela?: string } = { token: Deno.env.get("PIPEFY_TOKEN"), tabela: Deno.env.get("PIPEFY_PESSOAS_TABLE") },
+  env: { token?: string; tabela?: string },
 ): Promise<string | null> {
   if (!env.token || !env.tabela) return null;
   const registros: Registro[] = [];
