@@ -40,13 +40,14 @@ export async function buscarCpfNoPipefy(
   for (let pagina = 0; pagina < 20; pagina++) {
     const query = `query($t: ID!, $a: String) { table(id: $t) { table_records(first: 50, after: $a) {
       pageInfo { hasNextPage endCursor } edges { node { title record_fields { field { id } value } } } } } }`;
-    const res = await fetch(API, {
+    const res: Response = await fetch(API, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ query, variables: { t: env.tabela, a: depois } }),
     });
     if (!res.ok) return null;
-    const pg = (await res.json())?.data?.table?.table_records;
+    const pg: { edges: { node: Registro }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } | undefined =
+      (await res.json())?.data?.table?.table_records;
     if (!pg) return null;
     registros.push(...pg.edges.map((e: { node: Registro }) => e.node));
     if (!pg.pageInfo.hasNextPage) break;
